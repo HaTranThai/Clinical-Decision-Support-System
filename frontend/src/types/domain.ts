@@ -82,3 +82,71 @@ export interface UserOut {
     is_active: boolean;
     created_at: string | null;
 }
+
+// MLOps types
+export interface MLOpsRun {
+    run_id: string;
+    run_name: string;
+    status: string;
+    start_time: string | null;
+    end_time: string | null;
+    duration_sec: number | null;
+    experiment_id: string;
+    params: Record<string, string>;
+    metrics: Record<string, number>;
+}
+
+export interface MLOpsExperimentsResponse {
+    runs: MLOpsRun[];
+    total: number;
+    error?: string;
+}
+
+export interface ModelVersion {
+    version: string;
+    stage: string;
+    creation_timestamp: string | null;
+    last_updated_timestamp: string | null;
+    run_id: string;
+    description: string;
+    tags: Record<string, string>;
+    status: string;
+}
+
+export interface MLOpsRegistryResponse {
+    model_name: string;
+    versions: ModelVersion[];
+    error?: string;
+}
+
+export interface PipelineRun {
+    dag_run_id: string;
+    state: string;
+    start_date: string;
+    end_date: string | null;
+    run_type: string;
+    logical_date?: string;
+}
+
+export interface PipelineStatus {
+    available: boolean;
+    dag_id?: string;
+    last_run: PipelineRun | null;
+    recent_runs: PipelineRun[];
+    next_run: string | null;
+}
+
+export interface SplitStats {
+    n_beats: number;
+    records: string[];
+    class_counts: { N: number; A: number; V: number };
+}
+
+export interface DatasetStats {
+    available: boolean;
+    train?: SplitStats;
+    val?: SplitStats;
+    test?: SplitStats;
+    total_records?: number;
+    generated_at?: string;
+}

@@ -1,6 +1,9 @@
 /** Sessions, Alerts, Settings, Analytics API */
 import http from './http';
-import type { Session, Alert, AlertDetail, Prediction, Setting, AnalyticsSummary, AlertsHourly, UserOut } from '../types/domain';
+import type {
+    Session, Alert, AlertDetail, Prediction, Setting, AnalyticsSummary, AlertsHourly, UserOut,
+    MLOpsExperimentsResponse, MLOpsRegistryResponse, PipelineStatus, DatasetStats,
+} from '../types/domain';
 
 // Sessions
 export const getSessions = async () => (await http.get<Session[]>('/api/sessions')).data;
@@ -28,3 +31,17 @@ export const getUsers = async () => (await http.get<UserOut[]>('/api/admin/users
 export const createUser = async (body: any) => (await http.post('/api/admin/users', body)).data;
 export const updateUser = async (id: string, body: any) => (await http.put(`/api/admin/users/${id}`, body)).data;
 export const deleteUser = async (id: string) => (await http.delete(`/api/admin/users/${id}`)).data;
+
+// MLOps
+export const getMLOpsExperiments = async () =>
+    (await http.get<MLOpsExperimentsResponse>('/api/mlops/experiments')).data;
+export const getMLOpsRegistry = async () =>
+    (await http.get<MLOpsRegistryResponse>('/api/mlops/registry')).data;
+export const getPipelineStatus = async () =>
+    (await http.get<PipelineStatus>('/api/mlops/pipeline/status')).data;
+export const getDatasetStats = async () =>
+    (await http.get<DatasetStats>('/api/mlops/dataset/stats')).data;
+export const promoteModelVersion = async (version: string) =>
+    (await http.post(`/api/mlops/registry/${version}/promote`)).data;
+export const archiveModelVersion = async (version: string) =>
+    (await http.post(`/api/mlops/registry/${version}/archive`)).data;

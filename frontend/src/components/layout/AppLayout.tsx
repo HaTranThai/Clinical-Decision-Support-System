@@ -10,6 +10,9 @@ import {
     TeamOutlined,
     LogoutOutlined,
     UserOutlined,
+    ExperimentOutlined,
+    ApiOutlined,
+    DatabaseOutlined,
 } from '@ant-design/icons';
 import { getMe } from '../../api/auth';
 import type { UserProfile } from '../../types/domain';
@@ -35,6 +38,16 @@ export default function AppLayout() {
         { key: '/alerts', icon: <AlertOutlined />, label: 'Alerts' },
         { key: '/sessions', icon: <DesktopOutlined />, label: 'Sessions' },
         { key: '/analytics', icon: <BarChartOutlined />, label: 'Analytics' },
+        {
+            key: 'mlops-group',
+            type: 'group' as const,
+            label: 'MLOps',
+            children: [
+                { key: '/mlops', icon: <ExperimentOutlined />, label: 'Dashboard' },
+                { key: '/mlops/experiments', icon: <ApiOutlined />, label: 'Experiments' },
+                { key: '/mlops/registry', icon: <DatabaseOutlined />, label: 'Model Registry' },
+            ],
+        },
         ...(user?.role === 'admin'
             ? [
                 { key: '/admin/settings', icon: <SettingOutlined />, label: 'Settings' },

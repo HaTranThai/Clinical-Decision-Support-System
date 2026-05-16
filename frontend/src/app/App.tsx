@@ -9,6 +9,9 @@ import SessionDetailPage from '../pages/SessionDetailPage';
 import AnalyticsPage from '../pages/AnalyticsPage';
 import AdminSettingsPage from '../pages/AdminSettingsPage';
 import AdminUsersPage from '../pages/AdminUsersPage';
+import MLOpsDashboardPage from '../pages/MLOpsDashboardPage';
+import ExperimentsPage from '../pages/ExperimentsPage';
+import ModelRegistryPage from '../pages/ModelRegistryPage';
 
 export default function App() {
     return (
@@ -23,6 +26,9 @@ export default function App() {
                     <Route path="/analytics" element={<AnalyticsPage />} />
                     <Route path="/admin/settings" element={<AdminSettingsPage />} />
                     <Route path="/admin/users" element={<AdminUsersPage />} />
+                    <Route path="/mlops" element={<MLOpsDashboardPage />} />
+                    <Route path="/mlops/experiments" element={<ExperimentsPage />} />
+                    <Route path="/mlops/registry" element={<ModelRegistryPage />} />
                     <Route path="/" element={<Navigate to="/live" replace />} />
                 </Route>
             </Route>
