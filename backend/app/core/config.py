@@ -19,6 +19,14 @@ class Settings(BaseSettings):
     # CORS
     BACKEND_CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
 
+    # MLflow
+    MLFLOW_TRACKING_URI: str = "http://localhost:5000"
+
+    # Airflow
+    AIRFLOW_API_URL: str = "http://localhost:8080/api/v1"
+    AIRFLOW_USERNAME: str = "admin"
+    AIRFLOW_PASSWORD: str = "admin123"
+
     class Config:
         env_file = ".env"
         case_sensitive = True

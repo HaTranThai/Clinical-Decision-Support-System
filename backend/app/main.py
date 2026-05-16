@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.api.routes import auth, users, sessions, alerts, settings as settings_route, analytics, health
+from app.api.routes import auth, users, sessions, alerts, settings as settings_route, analytics, health, mlops as mlops_route
 from app.api.ws.live import router as ws_router
 from app.services.kafka_consumer import KafkaConsumerService
 
@@ -53,4 +53,5 @@ app.include_router(alerts.router, prefix="/api/alerts", tags=["Alerts"])
 app.include_router(settings_route.router, prefix="/api/admin/settings", tags=["Admin - Settings"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
 app.include_router(health.router, prefix="/api", tags=["Health"])
+app.include_router(mlops_route.router, prefix="/api/mlops", tags=["MLOps"])
 app.include_router(ws_router)
