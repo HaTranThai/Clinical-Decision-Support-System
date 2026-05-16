@@ -22,11 +22,11 @@ logger = logging.getLogger("inference-service")
 
 def main():
     bootstrap = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
-    checkpoint = os.environ.get("MODEL_CHECKPOINT", "artifacts/best_mitbih_v25.pt")
+    checkpoint = os.environ.get("MODEL_URI") or os.environ.get("MODEL_CHECKPOINT", "artifacts/best_mitbih_v25.pt")
     thr_a = float(os.environ.get("THR_A", "0.65"))
     model_version = "mitbih_v25"
 
-    logger.info(f"Starting inference service: checkpoint={checkpoint}, thr_A={thr_a}")
+    logger.info(f"Starting inference service: model={checkpoint}, thr_A={thr_a}")
 
     # Wait for Kafka
     wait_for_kafka(bootstrap)
