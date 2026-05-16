@@ -1,0 +1,43 @@
+stages:
+  prepare_data:
+    cmd: python -m ecg_mlops.prepare_data --params params.yaml
+    deps:
+      - mlops/src/ecg_mlops
+      - services/replay-producer/src
+      - Data/mit-bih-arrhythmia-database-1.0.0/mit-bih-arrhythmia-database-1.0.0
+      - params.yaml
+    outs:
+      - data/processed/train.npz
+      - data/processed/val.npz
+      - data/processed/test.npz
+      - data/processed/dataset_stats.json
+
+  train:
+    cmd: python -m ecg_mlops.train --params params.yaml --train-data data/processed/train.npz --val-data data/processed/val.npz --output artifacts/model/challenger.pt
+    deps:
+      - mlops/src/ecg_mlops
+      - services/inference-service/src/model_def.py
+      - data/processed/train.npz
+      - data/processed/val.npz
+      - params.yaml
+    outs:
+      - artifacts/model/challenger.pt
+
+  evaluate:
+    cmd: python -m ecg_mlops.evaluate --params params.yaml --test-data data/processed/test.npz --checkpoint artifacts/model/challenger.pt --output artifacts/evaluation/metrics.json
+    deps:
+      - mlops/src/ecg_mlops
+      - data/processed/test.npz
+      - artifacts/model/challenger.pt
+      - params.yaml
+    metrics:
+      - artifacts/evaluation/metrics.json:
+          cache: false
+
+  compare_and_register:
+    cmd: python -m ecg_mlops.compare_and_register --params params.yaml --checkpoint artifacts/model/challenger.pt --metrics artifacts/evaluation/metrics.json
+    deps:
+      - mlops/src/ecg_mlops
+      - artifacts/model/challenger.pt
+      - artifacts/evaluation/metrics.json
+      - params.yaml

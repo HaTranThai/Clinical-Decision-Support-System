@@ -1,0 +1,24 @@
+data:
+  raw_dir: Data/mit-bih-arrhythmia-database-1.0.0/mit-bih-arrhythmia-database-1.0.0
+  processed_dir: data/processed
+  split:
+    train_records: ["102","103","104","107","108","111","113","114","115","116","121","123","124","200","201","202","203","205","207","210","212","213","214","217","220","221","222","223","230","232","233","234"]
+    val_records: ["101","105","106","112","117","122","209","219"]
+    test_records: ["100","109","118","119","208","215","228","231"]
+
+train:
+  epochs: 30
+  batch_size: 128
+  learning_rate: 0.001
+  weight_decay: 0.0001
+
+evaluate:
+  thr_a: 0.65
+  min_f1_macro: 0.75
+
+tracking:
+  experiment_name: ecg-cdss-arrhythmia
+  registered_model_name: ecg-cdss-cnn-rr4-morph8
+
+artifacts:
+  dir: artifacts
