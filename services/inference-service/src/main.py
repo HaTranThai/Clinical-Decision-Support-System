@@ -22,7 +22,7 @@ logger = logging.getLogger("inference-service")
 
 def main():
     bootstrap = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
-    checkpoint = os.environ.get("MODEL_URI") or os.environ.get("MODEL_CHECKPOINT", "artifacts/best_mitbih_v25.pt")
+    checkpoint = os.environ.get("MODEL_URI") or os.environ.get("MODEL_CHECKPOINT", "artifacts/best_mitbih_v25.json")
     thr_a = float(os.environ.get("THR_A", "0.65"))
     model_version = "mitbih_v25"
 
@@ -32,7 +32,7 @@ def main():
     wait_for_kafka(bootstrap)
 
     # Load model
-    model, idx_to_label, a_idx = load_model(checkpoint, device="cpu")
+    model, idx_to_label, a_idx = load_model(checkpoint)
 
     # Set up Kafka
     consumer = create_consumer(
@@ -64,7 +64,6 @@ def main():
             # Run inference
             result = predict_beat(
                 model=model,
-                seg=value.get("seg", []),
                 rr4=value.get("rr4", [0, 0, 1, 0]),
                 m8=value.get("m8", [0] * 8),
                 idx_to_label=idx_to_label,

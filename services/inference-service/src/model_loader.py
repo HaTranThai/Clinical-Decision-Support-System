@@ -1,85 +1,61 @@
-"""Model loader — loads .pt checkpoint with model_state and idx_to_label."""
+"""Model loader — loads an XGBoost booster from a local file or MLflow URI."""
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from urllib.parse import urlparse
 
-import torch
-
-from .model_def import CNN_RR4_Morph8
+import xgboost as xgb
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_IDX_TO_LABEL = {0: "N", 1: "A", 2: "V"}
 
-def _resolve_checkpoint(checkpoint_uri: str) -> Path:
-    """Resolve a local path or MLflow artifact URI into a local checkpoint path."""
-    parsed = urlparse(checkpoint_uri)
+
+def load_model(checkpoint_path: str) -> tuple[xgb.Booster, dict[int, str], int]:
+    """Load the trained XGBoost model.
+
+    The model file carries metadata as booster attributes:
+    - idx_to_label: JSON mapping of class index to label
+    - mlflow_run_id: the run that produced it
+
+    Args:
+        checkpoint_path: a local .json path, or an MLflow URI
+            (runs:/, models:/, mlflow-artifacts:).
+
+    Returns:
+        booster: loaded XGBoost booster
+        idx_to_label: index to label mapping
+        a_idx: index of the "A" class (-1 if absent)
+    """
+    parsed = urlparse(checkpoint_path)
+
     if parsed.scheme in {"runs", "models", "mlflow-artifacts"}:
         try:
-            import mlflow.artifacts
+            import mlflow.xgboost
         except ImportError as exc:
             raise RuntimeError(
-                "MODEL_URI points to an MLflow artifact, but mlflow is not installed "
-                "in the inference-service image."
+                "MODEL_URI points to an MLflow artifact, but mlflow is not "
+                "installed in the inference-service image."
             ) from exc
+        logger.info(f"Loading XGBoost model from MLflow URI {checkpoint_path}")
+        booster = mlflow.xgboost.load_model(checkpoint_path)
+    else:
+        path = Path(checkpoint_path)
+        if not path.exists():
+            raise FileNotFoundError(f"Model file not found: {checkpoint_path}")
+        logger.info(f"Loading XGBoost model from {path}")
+        booster = xgb.Booster()
+        booster.load_model(str(path))
 
-        downloaded = mlflow.artifacts.download_artifacts(artifact_uri=checkpoint_uri)
-        path = Path(downloaded)
-        if path.is_dir():
-            candidates = sorted(path.glob("*.pt"))
-            if not candidates:
-                raise FileNotFoundError(f"No .pt checkpoint found in MLflow artifact: {checkpoint_uri}")
-            return candidates[0]
-        return path
+    idx_to_label_raw = booster.attr("idx_to_label")
+    if idx_to_label_raw:
+        idx_to_label = {int(k): v for k, v in json.loads(idx_to_label_raw).items()}
+    else:
+        idx_to_label = dict(DEFAULT_IDX_TO_LABEL)
 
-    return Path(checkpoint_uri)
+    a_idx = next((idx for idx, lab in idx_to_label.items() if lab == "A"), -1)
 
-
-def load_model(
-    checkpoint_path: str,
-    device: str = "cpu",
-) -> tuple[CNN_RR4_Morph8, dict[int, str], int]:
-    """Load trained model from checkpoint.
-    
-    The checkpoint contains:
-    - model_state: state dict
-    - idx_to_label: {0: "N", 1: "A", 2: "V"} (example)
-    
-    Returns:
-        model: loaded model in eval mode
-        idx_to_label: index to label mapping
-        a_idx: index of "A" class
-    """
-    path = _resolve_checkpoint(checkpoint_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Model checkpoint not found: {checkpoint_path}")
-
-    logger.info(f"Loading model from {path}")
-    checkpoint = torch.load(path, map_location=device, weights_only=False)
-
-    # Extract idx_to_label
-    idx_to_label = checkpoint.get("idx_to_label", {0: "N", 1: "A", 2: "V"})
-    n_classes = len(idx_to_label)
-
-    # Determine in_ch from state dict
-    first_conv_weight = checkpoint["model_state"].get("cnn.0.weight")
-    if first_conv_weight is None:
-        first_conv_weight = checkpoint["model_state"].get("conv1.0.weight")
-    in_ch = first_conv_weight.shape[1] if first_conv_weight is not None else 2
-
-    # Build model
-    model = CNN_RR4_Morph8(in_ch=in_ch, n_classes=n_classes)
-    model.load_state_dict(checkpoint["model_state"])
-    model.to(device)
-    model.eval()
-
-    # Find A index
-    a_idx = -1
-    for idx, lab in idx_to_label.items():
-        if lab == "A":
-            a_idx = int(idx)
-            break
-
-    logger.info(f"Model loaded: in_ch={in_ch}, n_classes={n_classes}, idx_to_label={idx_to_label}, a_idx={a_idx}")
-    return model, idx_to_label, a_idx
+    logger.info(f"Model loaded: idx_to_label={idx_to_label}, a_idx={a_idx}")
+    return booster, idx_to_label, a_idx
