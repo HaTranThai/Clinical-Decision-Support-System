@@ -4,7 +4,7 @@
 
 - Docker & Docker Compose installed
 - MIT-BIH data files (e.g., `223.dat`, `223.hea`, `223.atr`)
-- Trained model checkpoint `best_mitbih_v25.pt`, or run the MLOps pipeline to create one
+- Trained model checkpoint `best_mitbih_v25.json`, or run the MLOps pipeline to create one
 
 ## Setup
 
@@ -23,7 +23,7 @@ cp .env.example .env
 cp 223.dat 223.hea 223.atr services/replay-producer/data/
 
 # Copy model checkpoint, if you already have one
-cp best_mitbih_v25.pt services/inference-service/artifacts/
+cp best_mitbih_v25.json services/inference-service/artifacts/
 ```
 
 To train and promote a checkpoint locally:

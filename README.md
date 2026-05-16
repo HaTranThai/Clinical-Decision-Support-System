@@ -18,7 +18,7 @@ MIT-BIH Files → DVC Prepare Data → Train CNN → MLflow Tracking → Evaluat
 
 ```bash
 # 1. Copy your model checkpoint, or build one with the MLOps workflow below
-cp best_mitbih_v25.pt services/inference-service/artifacts/
+cp best_mitbih_v25.json services/inference-service/artifacts/
 
 # 2. Copy MIT-BIH data (e.g., record 223)
 cp 223.dat 223.hea 223.atr services/replay-producer/data/
@@ -46,7 +46,7 @@ dvc repro
 
 MLflow UI: http://localhost:5000
 
-The DVC pipeline writes a promoted checkpoint to `services/inference-service/artifacts/best_mitbih_v25.pt`.
+The DVC pipeline writes a promoted checkpoint to `services/inference-service/artifacts/best_mitbih_v25.json`.
 
 ## Services
 

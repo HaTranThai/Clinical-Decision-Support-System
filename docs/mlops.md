@@ -11,7 +11,7 @@ MIT-BIH WFDB files
  -> MLflow experiment tracking
  -> DVC evaluate
  -> gated promote_model
- -> inference-service/artifacts/best_mitbih_v25.pt
+ -> inference-service/artifacts/best_mitbih_v25.json
  -> realtime serving pipeline
 ```
 
@@ -50,7 +50,7 @@ dvc repro
 The promoted serving checkpoint is written to:
 
 ```text
-services/inference-service/artifacts/best_mitbih_v25.pt
+services/inference-service/artifacts/best_mitbih_v25.json
 ```
 
 The promotion stage is gated by `--min-f1` in `dvc.yaml`.
@@ -60,7 +60,7 @@ The promotion stage is gated by `--min-f1` in `dvc.yaml`.
 The inference service still supports the legacy local checkpoint:
 
 ```bash
-MODEL_CHECKPOINT=artifacts/best_mitbih_v25.pt
+MODEL_CHECKPOINT=artifacts/best_mitbih_v25.json
 ```
 
 It also supports MLflow artifact URIs:
