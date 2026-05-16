@@ -44,6 +44,19 @@ services:
       timeout: 5s
       retries: 5
 
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.12.2
+    ports:
+      - "5000:5000"
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --default-artifact-root /mlflow/artifacts
+    volumes:
+      - mlflow-data:/mlflow
+
   # ── Backend (FastAPI) ──
   backend:
     build:
@@ -57,6 +70,10 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
       BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://mlflow:5000}
+      AIRFLOW_API_URL: ${AIRFLOW_API_URL:-http://airflow-webserver:8080/api/v1}
+      AIRFLOW_USERNAME: ${AIRFLOW_USERNAME:-admin}
+      AIRFLOW_PASSWORD: ${AIRFLOW_PASSWORD:-admin123}
     depends_on:
       postgres:
         condition: service_healthy
@@ -114,6 +131,8 @@ services:
     environment:
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
       MODEL_CHECKPOINT: ${MODEL_CHECKPOINT:-artifacts/best_mitbih_v25.pt}
+      MODEL_URI: ${MODEL_URI:-}
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://mlflow:5000}
       THR_A: ${THR_A:-0.65}
     volumes:
       - ./services/inference-service/artifacts:/app/artifacts
@@ -144,5 +163,107 @@ services:
         condition: service_healthy
     restart: on-failure
 
+  # ── Airflow ──
+  airflow-init:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate &&
+        airflow users create \
+          --username admin \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@ecg-cdss.local \
+          --password admin123 || true
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://ecg_admin:ecg_secret_2024@postgres:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__FERNET_KEY: "46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLt0nIe3aI="
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./mlops:/app/mlops
+      - ./services:/app/services
+      - ./Data:/app/Data
+      - ./params.yaml:/app/params.yaml
+      - airflow-processed:/app/data/processed
+      - airflow-artifacts:/app/artifacts
+      - ./services/inference-service/artifacts:/app/services/inference-service/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+
+  airflow-webserver:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    command: airflow webserver
+    ports:
+      - "8080:8080"
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://ecg_admin:ecg_secret_2024@postgres:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__FERNET_KEY: "46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLt0nIe3aI="
+      AIRFLOW__API__AUTH_BACKENDS: "airflow.api.auth.backend.basic_auth"
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./mlops:/app/mlops
+      - ./services:/app/services
+      - ./Data:/app/Data
+      - ./params.yaml:/app/params.yaml
+      - airflow-processed:/app/data/processed
+      - airflow-artifacts:/app/artifacts
+      - ./services/inference-service/artifacts:/app/services/inference-service/artifacts
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    restart: always
+
+  airflow-scheduler:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    command: airflow scheduler
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://ecg_admin:ecg_secret_2024@postgres:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__FERNET_KEY: "46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLt0nIe3aI="
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./mlops:/app/mlops
+      - ./services:/app/services
+      - ./Data:/app/Data
+      - ./params.yaml:/app/params.yaml
+      - airflow-processed:/app/data/processed
+      - airflow-artifacts:/app/artifacts
+      - ./services/inference-service/artifacts:/app/services/inference-service/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    restart: always
+
 volumes:
   pgdata:
+  mlflow-data:
+  airflow-processed:
+  airflow-artifacts:

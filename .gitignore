@@ -1,2 +1,14 @@
 services/replay-producer/data/*
 services/inference-service/artifacts/*
+!services/inference-service/artifacts/.gitkeep
+data/
+artifacts/
+mlruns/
+mlartifacts/
+.dvc/cache/
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+Data/
+.env

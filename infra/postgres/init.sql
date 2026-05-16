@@ -162,3 +162,14 @@ INSERT INTO system_setting (key, current_value_json) VALUES
     ('STREAM_CHUNK_SEC', '1.0'),
     ('REALTIME_SPEED', '1.0')
 ON CONFLICT (key) DO NOTHING;
+
+-- ===================================
+-- AIRFLOW METADATA DATABASE
+-- ===================================
+
+-- Create airflow database for Airflow metadata store
+SELECT 'CREATE DATABASE airflow'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'airflow')\gexec
+
+\c airflow
+GRANT ALL PRIVILEGES ON DATABASE airflow TO ecg_admin;
