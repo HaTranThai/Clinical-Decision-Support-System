@@ -16,7 +16,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 DATASET_STATS_PATH = Path("/app/data/processed/dataset_stats.json")
-MODEL_NAME = "ecg-cdss-cnn-rr4-morph8"
+MODEL_NAME = "ecg-cdss-xgb-rr4-morph8"
 
 
 # ── Internal HTTP helpers ──────────────────────────────────────────────────────

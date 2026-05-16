@@ -141,7 +141,7 @@ ON CONFLICT (username) DO NOTHING;
 INSERT INTO model_version (model_version_id, name, artifact_uri, is_active) VALUES
     ('c0000000-0000-0000-0000-000000000001',
      'mitbih_v25',
-     'artifacts/best_mitbih_v25.pt',
+     'artifacts/best_mitbih_v25.json',
      TRUE)
 ON CONFLICT DO NOTHING;
 

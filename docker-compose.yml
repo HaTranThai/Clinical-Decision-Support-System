@@ -130,7 +130,7 @@ services:
       dockerfile: inference-service/Dockerfile
     environment:
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
-      MODEL_CHECKPOINT: ${MODEL_CHECKPOINT:-artifacts/best_mitbih_v25.pt}
+      MODEL_CHECKPOINT: ${MODEL_CHECKPOINT:-artifacts/best_mitbih_v25.json}
       MODEL_URI: ${MODEL_URI:-}
       MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://mlflow:5000}
       THR_A: ${THR_A:-0.65}
