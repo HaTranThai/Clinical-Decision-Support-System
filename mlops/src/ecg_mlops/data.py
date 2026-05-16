@@ -106,3 +106,12 @@ def load_arrays(path: Path) -> ECGDatasetArrays:
         labels=data["labels"],
         meta=data["meta"],
     )
+
+
+# RR4 (4 interval features) + M8 (8 morphology features) = 12 tabular features
+FEATURE_NAMES = [f"rr4_{i}" for i in range(4)] + [f"m8_{i}" for i in range(8)]
+
+
+def feature_matrix(arrays: ECGDatasetArrays) -> np.ndarray:
+    """Build the (N, 12) RR4+M8 tabular feature matrix for XGBoost."""
+    return np.concatenate([arrays.rr4, arrays.m8], axis=1).astype(np.float32)

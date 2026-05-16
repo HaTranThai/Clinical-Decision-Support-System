@@ -1,7 +1,7 @@
 """Configuration loading for MLOps jobs."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -23,18 +23,17 @@ class PipelineConfig:
     test_records: list[str]
     # Backward-compat: all records combined
     records: list[str]
-    # Train hyperparams
-    epochs: int
-    batch_size: int
-    learning_rate: float
-    weight_decay: float
+    # XGBoost hyperparams
+    xgb_num_boost_round: int
+    xgb_early_stopping_rounds: int
+    xgb_max_depth: int
+    xgb_eta: float
+    xgb_subsample: float
+    xgb_colsample_bytree: float
+    xgb_min_child_weight: float
     # Evaluate
     thr_a: float
     min_f1_macro: float
-    # Legacy split params (kept for backward compat, no longer used for splitting)
-    test_size: float
-    val_size: float
-    random_seed: int
 
 
 def _get(source: dict[str, Any], dotted_key: str, default: Any = None) -> Any:
@@ -67,19 +66,18 @@ def load_config(params_path: str | Path = REPO_ROOT / "params.yaml") -> Pipeline
         processed_dir=REPO_ROOT / _get(params, "data.processed_dir", "data/processed"),
         artifacts_dir=REPO_ROOT / _get(params, "artifacts.dir", "artifacts"),
         experiment_name=str(_get(params, "tracking.experiment_name", "ecg-cdss-arrhythmia")),
-        registered_model_name=str(_get(params, "tracking.registered_model_name", "ecg-cdss-cnn-rr4-morph8")),
+        registered_model_name=str(_get(params, "tracking.registered_model_name", "ecg-cdss-xgb-rr4-morph8")),
         train_records=train_records,
         val_records=val_records,
         test_records=test_records,
         records=all_records,
-        epochs=int(_get(params, "train.epochs", 30)),
-        batch_size=int(_get(params, "train.batch_size", 128)),
-        learning_rate=float(_get(params, "train.learning_rate", 0.001)),
-        weight_decay=float(_get(params, "train.weight_decay", 0.0001)),
+        xgb_num_boost_round=int(_get(params, "xgboost.num_boost_round", 400)),
+        xgb_early_stopping_rounds=int(_get(params, "xgboost.early_stopping_rounds", 40)),
+        xgb_max_depth=int(_get(params, "xgboost.max_depth", 6)),
+        xgb_eta=float(_get(params, "xgboost.eta", 0.1)),
+        xgb_subsample=float(_get(params, "xgboost.subsample", 0.8)),
+        xgb_colsample_bytree=float(_get(params, "xgboost.colsample_bytree", 0.8)),
+        xgb_min_child_weight=float(_get(params, "xgboost.min_child_weight", 1.0)),
         thr_a=float(_get(params, "evaluate.thr_a", 0.65)),
         min_f1_macro=float(_get(params, "evaluate.min_f1_macro", 0.75)),
-        # Legacy
-        test_size=float(_get(params, "split.test_size", 0.2)),
-        val_size=float(_get(params, "split.val_size", 0.1)),
-        random_seed=int(_get(params, "split.random_seed", 42)),
     )

@@ -1,5 +1,5 @@
 mlflow==2.12.2
-torch==2.2.2
+xgboost==2.1.4
 wfdb==4.1.2
 numpy==1.26.4
 scipy==1.13.0

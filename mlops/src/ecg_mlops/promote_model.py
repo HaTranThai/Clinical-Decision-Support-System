@@ -28,11 +28,11 @@ def main() -> None:
         description="Manually promote a checkpoint to the inference-service serving location"
     )
     parser.add_argument("--params", default="params.yaml")
-    parser.add_argument("--checkpoint", default="artifacts/model/challenger.pt")
+    parser.add_argument("--checkpoint", default="artifacts/model/challenger.json")
     parser.add_argument(
         "--target",
         default=None,
-        help="Destination path. Defaults to services/inference-service/artifacts/best_mitbih_v25.pt",
+        help="Destination path. Defaults to services/inference-service/artifacts/best_mitbih_v25.json",
     )
     parser.add_argument("--metrics", default="artifacts/evaluation/metrics.json")
     parser.add_argument("--min-f1", type=float, default=0.0, help="Minimum f1_macro required for promotion")
@@ -61,7 +61,7 @@ def main() -> None:
     else:
         target_dir = REPO_ROOT / "services" / "inference-service" / "artifacts"
         target_dir.mkdir(parents=True, exist_ok=True)
-        target_path = target_dir / "best_mitbih_v25.pt"
+        target_path = target_dir / "best_mitbih_v25.json"
 
     target_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(args.checkpoint, target_path)

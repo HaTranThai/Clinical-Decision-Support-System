@@ -12,7 +12,7 @@ dependencies = [
     "numpy>=1.24",
     "pandas>=2.0",
     "scikit-learn>=1.3",
-    "torch>=2.1",
+    "xgboost>=2.0",
     "wfdb>=4.1",
     "scipy>=1.11",
     "pyyaml>=6.0",
@@ -22,6 +22,7 @@ dependencies = [
 ecg-prepare-data = "ecg_mlops.prepare_data:main"
 ecg-train = "ecg_mlops.train:main"
 ecg-evaluate = "ecg_mlops.evaluate:main"
+ecg-compare-register = "ecg_mlops.compare_and_register:main"
 ecg-promote-model = "ecg_mlops.promote_model:main"
 
 [tool.setuptools.packages.find]

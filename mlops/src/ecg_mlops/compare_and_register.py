@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import mlflow
-import torch
+import xgboost as xgb
 from mlflow.tracking import MlflowClient
 
 from .config import load_config
@@ -18,21 +18,25 @@ from .paths import REPO_ROOT
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
+SERVING_MODEL_NAME = "best_mitbih_v25.json"
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Compare challenger vs champion and promote if better")
     parser.add_argument("--params", default="params.yaml")
-    parser.add_argument("--checkpoint", default="artifacts/model/challenger.pt")
+    parser.add_argument("--checkpoint", default="artifacts/model/challenger.json")
     parser.add_argument("--metrics", default="artifacts/evaluation/metrics.json")
     args = parser.parse_args()
 
     cfg = load_config(args.params)
     metrics = json.loads(Path(args.metrics).read_text(encoding="utf-8"))
-    checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+
+    bst = xgb.Booster()
+    bst.load_model(args.checkpoint)
+    run_id: str | None = bst.attr("mlflow_run_id")
 
     challenger_f1 = float(metrics["f1_macro"])
     challenger_accuracy = float(metrics["accuracy"])
-    run_id: str | None = checkpoint.get("mlflow_run_id")
 
     model_name = cfg.registered_model_name
     client = MlflowClient()
@@ -41,7 +45,7 @@ def main() -> None:
     try:
         client.create_registered_model(
             model_name,
-            description="ECG Arrhythmia CNN_RR4_Morph8 — MIT-BIH 48 records",
+            description="ECG Arrhythmia XGBoost (RR4+M8 features) — MIT-BIH 48 records",
         )
         logger.info(f"Created registered model: {model_name}")
     except mlflow.exceptions.MlflowException:
@@ -70,7 +74,6 @@ def main() -> None:
     client.set_model_version_tag(model_name, mv.version, "test_f1_macro", f"{challenger_f1:.4f}")
     client.set_model_version_tag(model_name, mv.version, "test_accuracy", f"{challenger_accuracy:.4f}")
     client.set_model_version_tag(model_name, mv.version, "trained_at", datetime.now(timezone.utc).isoformat())
-    # Per-class metrics tags
     for label, pc in metrics.get("per_class", {}).items():
         client.set_model_version_tag(model_name, mv.version, f"test_f1_{label}", f"{pc['f1']:.4f}")
 
@@ -83,7 +86,6 @@ def main() -> None:
             champion_version = production_versions[0]
             champion_f1 = float(champion_version.tags.get("test_f1_macro", 0.0))
             if champion_f1 == 0.0:
-                # Fallback: check run metrics
                 try:
                     champ_run = client.get_run(champion_version.run_id)
                     champion_f1 = float(champ_run.data.metrics.get("eval_f1_macro", 0.0))
@@ -98,16 +100,15 @@ def main() -> None:
     )
 
     if challenger_f1 > champion_f1 and challenger_f1 >= cfg.min_f1_macro:
-        # Promote challenger → Production (archives existing Production)
         client.transition_model_version_stage(
             model_name, mv.version, "Production", archive_existing_versions=True
         )
         client.set_model_version_tag(model_name, mv.version, "stage_reason", "champion_replacement")
 
-        # Copy checkpoint to serving location
+        # Copy model to serving location
         target_dir = REPO_ROOT / "services" / "inference-service" / "artifacts"
         target_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(args.checkpoint, target_dir / "best_mitbih_v25.pt")
+        shutil.copy2(args.checkpoint, target_dir / SERVING_MODEL_NAME)
 
         manifest = {
             "model_name": model_name,

@@ -13,31 +13,30 @@ stages:
       - data/processed/dataset_stats.json
 
   train:
-    cmd: python -m ecg_mlops.train --params params.yaml --train-data data/processed/train.npz --val-data data/processed/val.npz --output artifacts/model/challenger.pt
+    cmd: python -m ecg_mlops.train --params params.yaml --train-data data/processed/train.npz --val-data data/processed/val.npz --output artifacts/model/challenger.json
     deps:
       - mlops/src/ecg_mlops
-      - services/inference-service/src/model_def.py
       - data/processed/train.npz
       - data/processed/val.npz
       - params.yaml
     outs:
-      - artifacts/model/challenger.pt
+      - artifacts/model/challenger.json
 
   evaluate:
-    cmd: python -m ecg_mlops.evaluate --params params.yaml --test-data data/processed/test.npz --checkpoint artifacts/model/challenger.pt --output artifacts/evaluation/metrics.json
+    cmd: python -m ecg_mlops.evaluate --params params.yaml --test-data data/processed/test.npz --checkpoint artifacts/model/challenger.json --output artifacts/evaluation/metrics.json
     deps:
       - mlops/src/ecg_mlops
       - data/processed/test.npz
-      - artifacts/model/challenger.pt
+      - artifacts/model/challenger.json
       - params.yaml
     metrics:
       - artifacts/evaluation/metrics.json:
           cache: false
 
   compare_and_register:
-    cmd: python -m ecg_mlops.compare_and_register --params params.yaml --checkpoint artifacts/model/challenger.pt --metrics artifacts/evaluation/metrics.json
+    cmd: python -m ecg_mlops.compare_and_register --params params.yaml --checkpoint artifacts/model/challenger.json --metrics artifacts/evaluation/metrics.json
     deps:
       - mlops/src/ecg_mlops
-      - artifacts/model/challenger.pt
+      - artifacts/model/challenger.json
       - artifacts/evaluation/metrics.json
       - params.yaml

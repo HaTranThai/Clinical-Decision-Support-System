@@ -6,11 +6,14 @@ data:
     val_records: ["101","105","106","112","117","122","209","219"]
     test_records: ["100","109","118","119","208","215","228","231"]
 
-train:
-  epochs: 30
-  batch_size: 128
-  learning_rate: 0.001
-  weight_decay: 0.0001
+xgboost:
+  num_boost_round: 400
+  early_stopping_rounds: 40
+  max_depth: 6
+  eta: 0.1
+  subsample: 0.8
+  colsample_bytree: 0.8
+  min_child_weight: 1
 
 evaluate:
   thr_a: 0.65
@@ -18,7 +21,7 @@ evaluate:
 
 tracking:
   experiment_name: ecg-cdss-arrhythmia
-  registered_model_name: ecg-cdss-cnn-rr4-morph8
+  registered_model_name: ecg-cdss-xgb-rr4-morph8
 
 artifacts:
   dir: artifacts
