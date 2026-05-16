@@ -4,7 +4,7 @@
 
 - Docker & Docker Compose installed
 - MIT-BIH data files (e.g., `223.dat`, `223.hea`, `223.atr`)
-- Trained model checkpoint `best_mitbih_v25.pt`
+- Trained model checkpoint `best_mitbih_v25.pt`, or run the MLOps pipeline to create one
 
 ## Setup
 
@@ -22,19 +22,31 @@ cp .env.example .env
 # Copy MIT-BIH record files
 cp 223.dat 223.hea 223.atr services/replay-producer/data/
 
-# Copy model checkpoint
+# Copy model checkpoint, if you already have one
 cp best_mitbih_v25.pt services/inference-service/artifacts/
+```
+
+To train and promote a checkpoint locally:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e mlops
+docker compose up -d mlflow
+export MLFLOW_TRACKING_URI=http://localhost:5000
+dvc repro
 ```
 
 ### 3. Build & Start
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
 This starts all services:
-- **Kafka** (Zookeeper + Broker) — port 9092
+- **Kafka** — port 9092
 - **PostgreSQL** — port 5432
+- **MLflow** — port 5000
 - **Backend (FastAPI)** — port 8000
 - **Frontend (React)** — port 3000
 - **Replay Producer** — internal
@@ -54,7 +66,7 @@ frontend   | Local: http://localhost:3000/
 
 Topics are auto-created by the init script. To manually create:
 ```bash
-docker-compose exec kafka bash /scripts/create-topics.sh
+docker compose exec kafka bash /scripts/create-topics.sh
 ```
 
 ## Demo Flow
@@ -103,22 +115,23 @@ Services may restart a few times while Kafka initializes. This is normal.
 
 ### No waveform showing
 - Check that MIT-BIH data files are in `services/replay-producer/data/`
-- Check replay-producer logs: `docker-compose logs replay-producer`
+- Check replay-producer logs: `docker compose logs replay-producer`
 
 ### No predictions
 - Check that model checkpoint is in `services/inference-service/artifacts/`
-- Check inference-service logs: `docker-compose logs inference-service`
+- Or set `MODEL_URI=runs:/<run_id>/model/best_mitbih_mlops.pt` for a tracked MLflow artifact
+- Check inference-service logs: `docker compose logs inference-service`
 
 ### Database issues
 Reset database:
 ```bash
-docker-compose down -v
-docker-compose up --build
+docker compose down -v
+docker compose up --build
 ```
 
 ## Stopping
 
 ```bash
-docker-compose down        # Stop containers
-docker-compose down -v     # Stop & remove volumes (reset DB)
+docker compose down        # Stop containers
+docker compose down -v     # Stop & remove volumes (reset DB and MLflow volume)
 ```

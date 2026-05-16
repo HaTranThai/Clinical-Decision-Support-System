@@ -8,6 +8,7 @@ The ECG Real-time CDSS is a microservices-based system that:
 3. Runs beat-level PyTorch inference for arrhythmia classification (N/A/V)
 4. Applies clinical alert rules with thresholds and cooldown
 5. Delivers real-time waveform + predictions + alerts via WebSocket to a React dashboard
+6. Reproduces model training/evaluation through DVC and tracks experiments through MLflow
 
 ## 2. Architecture Diagram
 
@@ -34,6 +35,7 @@ The ECG Real-time CDSS is a microservices-based system that:
 ```
 
 All inter-service communication flows through **Apache Kafka**. State is persisted in **PostgreSQL**.
+Offline model operations use **DVC** for pipeline reproducibility and **MLflow** for experiment tracking/artifacts.
 
 ## 3. Kafka Topics
 
@@ -83,6 +85,13 @@ All inter-service communication flows through **Apache Kafka**. State is persist
 - Alert workflow: ACK/DISMISS with reason/note
 - Admin: user management, system settings with audit log
 
+### 4.7 MLOps Pipeline
+- `params.yaml` stores reproducible data split, training, evaluation, and tracking parameters
+- `dvc.yaml` defines prepare_data → train → evaluate → promote_model stages
+- MLflow records run parameters, validation/test metrics, checkpoints, and evaluation artifacts
+- Promotion copies a gated checkpoint into `services/inference-service/artifacts/` with a manifest
+- Inference can serve either the promoted local checkpoint or a tracked MLflow artifact URI
+
 ## 5. Tech Stack
 
 | Layer | Technology |
@@ -92,6 +101,7 @@ All inter-service communication flows through **Apache Kafka**. State is persist
 | Services | Python 3.11, PyTorch, WFDB, NumPy, SciPy, confluent-kafka |
 | Database | PostgreSQL 15 |
 | Messaging | Apache Kafka 3.6 |
+| MLOps | DVC, MLflow |
 | Infra | Docker, Docker Compose |
 
 ## 6. Security
