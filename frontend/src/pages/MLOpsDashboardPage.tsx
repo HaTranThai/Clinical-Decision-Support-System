@@ -74,27 +74,25 @@ export default function MLOpsDashboardPage() {
         queryFn: getDatasetStats,
     });
 
-    // Derive champion (Production) model
     const champion = registry?.versions.find((v) => v.stage === 'Production');
-    const championF1 = champion ? parseFloat(champion.tags.test_f1_macro ?? '') : null;
-    const championAcc = champion ? parseFloat(champion.tags.test_accuracy ?? '') : null;
+    const championAuroc = champion ? parseFloat(champion.tags.test_auroc ?? '') : null;
+    const championAuprc = champion ? parseFloat(champion.tags.test_auprc ?? '') : null;
 
     const totalRuns = experiments?.total ?? 0;
     const lastRunState = pipelineStatus?.last_run?.state ?? null;
 
-    // Build F1 trend: last 20 FINISHED runs with start_time
     const trendRuns = (experiments?.runs ?? [])
         .filter((r) => r.status === 'FINISHED' && r.start_time)
         .slice(-20);
 
     const trendLabels = trendRuns.map((r) => dayjs(r.start_time!).format('MM-DD HH:mm'));
-    const valF1Series = trendRuns.map((r) => (r.metrics.val_f1_macro != null ? +r.metrics.val_f1_macro.toFixed(4) : null));
-    const testF1Series = trendRuns.map((r) => (r.metrics.test_f1_macro != null ? +r.metrics.test_f1_macro.toFixed(4) : null));
+    const valAurocSeries = trendRuns.map((r) => (r.metrics.val_auroc != null ? +r.metrics.val_auroc.toFixed(4) : null));
+    const testAurocSeries = trendRuns.map((r) => (r.metrics.test_auroc != null ? +r.metrics.test_auroc.toFixed(4) : null));
 
     const chartOption = {
-        title: { text: 'F1 Macro Trend (last 20 runs)', textStyle: { color: '#e5e7eb', fontSize: 14 } },
+        title: { text: 'AUROC Trend (last 20 runs)', textStyle: { color: '#e5e7eb', fontSize: 14 } },
         tooltip: { trigger: 'axis' },
-        legend: { data: ['Validation F1', 'Test F1'], textStyle: { color: '#9ca3af' } },
+        legend: { data: ['Validation AUROC', 'Test AUROC'], textStyle: { color: '#9ca3af' } },
         grid: { left: 50, right: 20, top: 60, bottom: 60 },
         xAxis: {
             type: 'category',
@@ -112,18 +110,18 @@ export default function MLOpsDashboardPage() {
         },
         series: [
             {
-                name: 'Validation F1',
+                name: 'Validation AUROC',
                 type: 'line',
-                data: valF1Series,
+                data: valAurocSeries,
                 itemStyle: { color: '#00d4aa' },
                 lineStyle: { color: '#00d4aa' },
                 connectNulls: true,
                 smooth: true,
             },
             {
-                name: 'Test F1',
+                name: 'Test AUROC',
                 type: 'line',
-                data: testF1Series,
+                data: testAurocSeries,
                 itemStyle: { color: '#3b82f6' },
                 lineStyle: { color: '#3b82f6' },
                 connectNulls: true,
@@ -180,9 +178,9 @@ export default function MLOpsDashboardPage() {
                     <Col span={6}>
                         <Card>
                             <Statistic
-                                title="Champion F1 Macro"
-                                value={championF1 != null ? (championF1 * 100).toFixed(2) : 'N/A'}
-                                suffix={championF1 != null ? '%' : ''}
+                                title="Champion AUROC"
+                                value={championAuroc != null ? (championAuroc * 100).toFixed(2) : 'N/A'}
+                                suffix={championAuroc != null ? '%' : ''}
                                 prefix={<CheckCircleOutlined style={{ color: '#00d4aa' }} />}
                                 valueStyle={{ color: '#00d4aa' }}
                             />
@@ -191,9 +189,9 @@ export default function MLOpsDashboardPage() {
                     <Col span={6}>
                         <Card>
                             <Statistic
-                                title="Champion Accuracy"
-                                value={championAcc != null ? (championAcc * 100).toFixed(2) : 'N/A'}
-                                suffix={championAcc != null ? '%' : ''}
+                                title="Champion AUPRC"
+                                value={championAuprc != null ? (championAuprc * 100).toFixed(2) : 'N/A'}
+                                suffix={championAuprc != null ? '%' : ''}
                                 prefix={<CheckCircleOutlined style={{ color: '#3b82f6' }} />}
                                 valueStyle={{ color: '#3b82f6' }}
                             />
@@ -358,20 +356,20 @@ export default function MLOpsDashboardPage() {
                             </Col>
                             <Col span={4}>
                                 <Statistic
-                                    title="Test F1 Macro"
-                                    value={champion.tags.test_f1_macro
-                                        ? (parseFloat(champion.tags.test_f1_macro) * 100).toFixed(2)
+                                    title="Test AUROC"
+                                    value={champion.tags.test_auroc
+                                        ? (parseFloat(champion.tags.test_auroc) * 100).toFixed(2)
                                         : 'N/A'}
-                                    suffix={champion.tags.test_f1_macro ? '%' : ''}
+                                    suffix={champion.tags.test_auroc ? '%' : ''}
                                 />
                             </Col>
                             <Col span={4}>
                                 <Statistic
-                                    title="Test Accuracy"
-                                    value={champion.tags.test_accuracy
-                                        ? (parseFloat(champion.tags.test_accuracy) * 100).toFixed(2)
+                                    title="Test AUPRC"
+                                    value={champion.tags.test_auprc
+                                        ? (parseFloat(champion.tags.test_auprc) * 100).toFixed(2)
                                         : 'N/A'}
-                                    suffix={champion.tags.test_accuracy ? '%' : ''}
+                                    suffix={champion.tags.test_auprc ? '%' : ''}
                                 />
                             </Col>
                             <Col span={4}>
@@ -381,12 +379,12 @@ export default function MLOpsDashboardPage() {
                                 />
                             </Col>
                             {Object.keys(champion.tags).filter(
-                                (k) => !['test_f1_macro', 'test_accuracy'].includes(k)
+                                (k) => !['test_auroc', 'test_auprc'].includes(k)
                             ).length > 0 && (
                                 <Col span={24} style={{ marginTop: 16 }}>
                                     <Text type="secondary" style={{ fontSize: 12 }}>Additional tags: </Text>
                                     {Object.entries(champion.tags)
-                                        .filter(([k]) => !['test_f1_macro', 'test_accuracy'].includes(k))
+                                        .filter(([k]) => !['test_auroc', 'test_auprc'].includes(k))
                                         .map(([k, v]) => (
                                             <Tag key={k} style={{ marginBottom: 4 }}>{k}: {v}</Tag>
                                         ))}

@@ -14,13 +14,13 @@ export default function AnalyticsPage() {
         grid: { top: 40, right: 20, bottom: 40, left: 50 },
         xAxis: {
             type: 'category' as const,
-            data: hourly?.map((h) => h.hour.slice(11, 16)) || [],
+            data: hourly?.map((h) => `${String(h.hour).padStart(2, '0')}:00`) || [],
             axisLabel: { color: '#9ca3af' },
         },
         yAxis: { type: 'value' as const, axisLabel: { color: '#9ca3af' } },
         series: [
             {
-                name: 'Alerts',
+                name: 'Sepsis Alerts',
                 type: 'bar' as const,
                 data: hourly?.map((h) => h.count) || [],
                 itemStyle: {
@@ -61,16 +61,16 @@ export default function AnalyticsPage() {
             <Title level={4} style={{ marginBottom: 16 }}>Analytics Dashboard</Title>
 
             <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-                <Col xs={12} md={6}>
+                <Col xs={12} md={5}>
                     <Card><Statistic title="Total Alerts" value={summary?.total_alerts || 0} /></Card>
                 </Col>
-                <Col xs={12} md={6}>
+                <Col xs={12} md={5}>
                     <Card><Statistic title="Acknowledged" value={summary?.ack_count || 0} valueStyle={{ color: '#3b82f6' }} /></Card>
                 </Col>
-                <Col xs={12} md={6}>
+                <Col xs={12} md={5}>
                     <Card><Statistic title="Dismissed" value={summary?.dismiss_count || 0} valueStyle={{ color: '#6b7280' }} /></Card>
                 </Col>
-                <Col xs={12} md={6}>
+                <Col xs={12} md={4}>
                     <Card>
                         <Statistic
                             title="Dismiss Rate"
@@ -80,11 +80,21 @@ export default function AnalyticsPage() {
                         />
                     </Card>
                 </Col>
+                <Col xs={12} md={5}>
+                    <Card>
+                        <Statistic
+                            title="Avg Response"
+                            value={summary?.avg_response_time_sec != null ? Math.round(summary.avg_response_time_sec) : '—'}
+                            suffix={summary?.avg_response_time_sec != null ? 's' : ''}
+                            valueStyle={{ color: '#00d4aa' }}
+                        />
+                    </Card>
+                </Col>
             </Row>
 
             <Row gutter={[16, 16]}>
                 <Col xs={24} md={14}>
-                    <Card title="Alerts per Hour">
+                    <Card title="Sepsis Alerts per Hour">
                         <ReactECharts option={barOption} style={{ height: 300 }} />
                     </Card>
                 </Col>

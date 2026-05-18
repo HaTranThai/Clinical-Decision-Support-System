@@ -1,116 +1,154 @@
-/**
- * Global Zustand store for Live Monitor state.
- * Keeps WebSocket connection + ECG data alive across page navigation.
- */
 import { create } from 'zustand';
+import type { WSVitalsData, WSPredictionData, WSAlertData } from '../types/ws';
+import type { SepsisPrediction, Alert } from '../types/domain';
+
+interface RiskPoint {
+    hour: number;
+    risk_score: number;
+    risk_level: string;
+}
+
+interface VitalsPoint {
+    hour: number;
+    record: Record<string, number | null>;
+}
 
 interface LiveMonitorState {
-    /* ── connection ── */
-    sessionId: string | null;
+    stayId: string | null;
     connected: boolean;
     ws: WebSocket | null;
+    lastVitals: Record<string, number | null> | null;
+    vitalsHistory: VitalsPoint[];
+    riskHistory: RiskPoint[];
+    lastPrediction: WSPredictionData | null;
+    alerts: WSAlertData[];
 
-    /* ── data ── */
-    waveformData: number[];
-    lastWaveform: any;
-    lastPrediction: any;
-    alerts: any[];
-
-    /* ── actions ── */
-    setSessionId: (id: string | null) => void;
+    selectStay: (id: string | null) => void;
+    seedRisk: (preds: SepsisPrediction[]) => void;
+    seedAlerts: (items: Alert[]) => void;
     connectWs: () => void;
     disconnectWs: () => void;
 }
 
 const WS_BASE = (import.meta as any).env?.VITE_WS_BASE_URL || `ws://${window.location.host}`;
-const MAX_WAVEFORM_POINTS = 1800; // ~5 seconds at 360 Hz
+const MAX_HISTORY = 600;
+
+function upsertRisk(list: RiskPoint[], point: RiskPoint): RiskPoint[] {
+    const idx = list.findIndex((p) => p.hour === point.hour);
+    if (idx >= 0) {
+        const copy = list.slice();
+        copy[idx] = point;
+        return copy;
+    }
+    return [...list, point].sort((a, b) => a.hour - b.hour).slice(-MAX_HISTORY);
+}
 
 export const useLiveMonitorStore = create<LiveMonitorState>((set, get) => ({
-    sessionId: null,
+    stayId: null,
     connected: false,
     ws: null,
-    waveformData: [],
-    lastWaveform: null,
+    lastVitals: null,
+    vitalsHistory: [],
+    riskHistory: [],
     lastPrediction: null,
     alerts: [],
 
-    setSessionId: (id) => {
-        const prev = get().sessionId;
-        if (prev === id) return;
-        // Disconnect old, then reconnect with new session
+    selectStay: (id) => {
+        if (get().stayId === id) return;
         get().disconnectWs();
-        set({ sessionId: id, waveformData: [], lastPrediction: null, alerts: [] });
+        set({
+            stayId: id,
+            lastVitals: null,
+            vitalsHistory: [],
+            riskHistory: [],
+            lastPrediction: null,
+            alerts: [],
+        });
         if (id) {
-            // Small delay so state settles
             setTimeout(() => get().connectWs(), 50);
         }
     },
 
+    seedRisk: (preds) => {
+        const sorted = [...preds]
+            .map((p) => ({ hour: p.hour, risk_score: p.risk_score, risk_level: p.risk_level }))
+            .sort((a, b) => a.hour - b.hour);
+        let history = get().riskHistory;
+        for (const p of sorted) history = upsertRisk(history, p);
+        const latest = history[history.length - 1];
+        set({
+            riskHistory: history,
+            lastPrediction: latest
+                ? { hour: latest.hour, ts: '', risk_score: latest.risk_score, risk_level: latest.risk_level }
+                : get().lastPrediction,
+        });
+    },
+
+    seedAlerts: (items) => {
+        const mapped: WSAlertData[] = items.map((a) => ({
+            alert_id: a.alert_id,
+            severity: a.severity ?? 0,
+            status: a.status,
+            start_time: a.start_time ?? '',
+        }));
+        set({ alerts: mapped.slice(0, 50) });
+    },
+
     connectWs: () => {
-        const { sessionId, ws: existingWs } = get();
-        if (!sessionId) return;
+        const { stayId, ws: existingWs } = get();
+        if (!stayId) return;
         if (existingWs && existingWs.readyState === WebSocket.OPEN) return;
 
         const token = localStorage.getItem('token') || '';
-        const url = `${WS_BASE}/ws/live?session_id=${sessionId}&token=${token}`;
-        const ws = new WebSocket(url);
+        const ws = new WebSocket(`${WS_BASE}/ws/live?stay_id=${stayId}&token=${token}`);
 
-        ws.onopen = () => {
-            set({ connected: true });
-            console.log('[LiveStore] WS connected to', sessionId);
-        };
+        ws.onopen = () => set({ connected: true });
 
         ws.onmessage = (event) => {
             try {
                 const msg = JSON.parse(event.data);
-                switch (msg.type) {
-                    case 'waveform': {
-                        const wf = msg.data;
-                        if (wf.samples?.[0]) {
-                            set((state) => {
-                                const updated = [...state.waveformData, ...wf.samples[0]];
-                                return {
-                                    lastWaveform: wf,
-                                    waveformData: updated.slice(-MAX_WAVEFORM_POINTS),
-                                };
-                            });
-                        }
-                        break;
-                    }
-                    case 'prediction':
-                        set({ lastPrediction: msg.data });
-                        break;
-                    case 'alert':
-                        set((state) => ({
-                            alerts: [msg.data, ...state.alerts].slice(0, 50),
-                        }));
-                        break;
+                if (msg.type === 'vitals') {
+                    const v = msg.data as WSVitalsData;
+                    set((state) => ({
+                        lastVitals: v.record,
+                        vitalsHistory: [...state.vitalsHistory, { hour: v.hour, record: v.record }].slice(-MAX_HISTORY),
+                    }));
+                } else if (msg.type === 'prediction') {
+                    const p = msg.data as WSPredictionData;
+                    set((state) => ({
+                        lastPrediction: p,
+                        riskHistory: upsertRisk(state.riskHistory, {
+                            hour: p.hour,
+                            risk_score: p.risk_score,
+                            risk_level: p.risk_level,
+                        }),
+                    }));
+                } else if (msg.type === 'alert') {
+                    set((state) => ({
+                        alerts: [msg.data as WSAlertData, ...state.alerts].slice(0, 50),
+                    }));
                 }
-            } catch (e) {
-                console.error('[LiveStore] WS parse error:', e);
+            } catch {
+                /* ignore malformed frame */
             }
         };
 
         ws.onclose = () => {
             set({ connected: false, ws: null });
-            // Auto-reconnect after 3s if session is still selected
             setTimeout(() => {
                 const current = get();
-                if (current.sessionId && !current.ws) {
-                    current.connectWs();
-                }
+                if (current.stayId && !current.ws) current.connectWs();
             }, 3000);
         };
 
         ws.onerror = () => ws.close();
-
         set({ ws });
     },
 
     disconnectWs: () => {
         const { ws } = get();
         if (ws) {
-            ws.onclose = null; // prevent auto-reconnect
+            ws.onclose = null;
             ws.close();
         }
         set({ ws: null, connected: false });

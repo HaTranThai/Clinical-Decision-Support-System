@@ -26,13 +26,18 @@ function fmtDt(iso: string | null | undefined): string {
     return dayjs(iso).format('YYYY-MM-DD HH:mm');
 }
 
-function parseF1(tags: Record<string, string>): string {
-    const v = parseFloat(tags.test_f1_macro ?? '');
+function parseAuroc(tags: Record<string, string>): string {
+    const v = parseFloat(tags.test_auroc ?? '');
     return isNaN(v) ? '-' : (v * 100).toFixed(2) + '%';
 }
 
-function parseAcc(tags: Record<string, string>): string {
-    const v = parseFloat(tags.test_accuracy ?? '');
+function parseAuprc(tags: Record<string, string>): string {
+    const v = parseFloat(tags.test_auprc ?? '');
+    return isNaN(v) ? '-' : (v * 100).toFixed(2) + '%';
+}
+
+function parseSensitivity(tags: Record<string, string>): string {
+    const v = parseFloat(tags.test_sensitivity ?? '');
     return isNaN(v) ? '-' : (v * 100).toFixed(2) + '%';
 }
 
@@ -176,24 +181,35 @@ export default function ModelRegistryPage() {
             ),
         },
         {
-            title: 'F1 Macro',
-            key: 'f1_macro',
+            title: 'AUROC',
+            key: 'auroc',
             width: 100,
-            render: (_: unknown, r: ModelVersion) => parseF1(r.tags),
+            render: (_: unknown, r: ModelVersion) => parseAuroc(r.tags),
             sorter: (a, b) => {
-                const va = parseFloat(a.tags.test_f1_macro ?? '0');
-                const vb = parseFloat(b.tags.test_f1_macro ?? '0');
+                const va = parseFloat(a.tags.test_auroc ?? '0');
+                const vb = parseFloat(b.tags.test_auroc ?? '0');
                 return va - vb;
             },
         },
         {
-            title: 'Accuracy',
-            key: 'accuracy',
+            title: 'AUPRC',
+            key: 'auprc',
             width: 100,
-            render: (_: unknown, r: ModelVersion) => parseAcc(r.tags),
+            render: (_: unknown, r: ModelVersion) => parseAuprc(r.tags),
             sorter: (a, b) => {
-                const va = parseFloat(a.tags.test_accuracy ?? '0');
-                const vb = parseFloat(b.tags.test_accuracy ?? '0');
+                const va = parseFloat(a.tags.test_auprc ?? '0');
+                const vb = parseFloat(b.tags.test_auprc ?? '0');
+                return va - vb;
+            },
+        },
+        {
+            title: 'Sensitivity',
+            key: 'sensitivity',
+            width: 110,
+            render: (_: unknown, r: ModelVersion) => parseSensitivity(r.tags),
+            sorter: (a, b) => {
+                const va = parseFloat(a.tags.test_sensitivity ?? '0');
+                const vb = parseFloat(b.tags.test_sensitivity ?? '0');
                 return va - vb;
             },
         },
@@ -244,7 +260,7 @@ export default function ModelRegistryPage() {
                             title="Production Version"
                             value={
                                 productionVersion
-                                    ? `v${productionVersion.version} | F1: ${parseF1(productionVersion.tags)}`
+                                    ? `v${productionVersion.version} | AUROC: ${parseAuroc(productionVersion.tags)}`
                                     : 'None'
                             }
                             valueStyle={{ color: productionVersion ? '#00d4aa' : '#9ca3af', fontSize: 18 }}

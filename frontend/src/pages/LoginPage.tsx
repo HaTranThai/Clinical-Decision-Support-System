@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Form, Input, Button, Typography, message, Space } from 'antd';
-import { HeartOutlined, LockOutlined, UserOutlined } from '@ant-design/icons';
+import { MedicineBoxOutlined, LockOutlined, UserOutlined } from '@ant-design/icons';
 import { login } from '../api/auth';
 
 const { Title, Text, Paragraph } = Typography;
@@ -44,12 +44,12 @@ export default function LoginPage() {
                 }}
             >
                 <div style={{ textAlign: 'center', marginBottom: 32 }}>
-                    <HeartOutlined style={{ fontSize: 48, color: '#00d4aa', marginBottom: 16 }} />
+                    <MedicineBoxOutlined style={{ fontSize: 48, color: '#00d4aa', marginBottom: 16 }} />
                     <Title level={3} style={{ color: '#e5e7eb', marginBottom: 4 }}>
-                        ECG CDSS
+                        Sepsis Early-Warning CDSS
                     </Title>
                     <Text style={{ color: '#9ca3af' }}>
-                        Real-time Arrhythmia Detection System
+                        Real-time ICU Sepsis Risk Monitoring
                     </Text>
                 </div>
 

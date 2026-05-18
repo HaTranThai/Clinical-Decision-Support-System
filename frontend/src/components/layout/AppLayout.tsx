@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Menu, Typography, Avatar, Dropdown, Space, Badge } from 'antd';
 import {
-    HeartOutlined,
+    MedicineBoxOutlined,
     AlertOutlined,
-    DesktopOutlined,
+    SolutionOutlined,
     BarChartOutlined,
     SettingOutlined,
     TeamOutlined,
@@ -13,6 +13,7 @@ import {
     ExperimentOutlined,
     ApiOutlined,
     DatabaseOutlined,
+    DashboardOutlined,
 } from '@ant-design/icons';
 import { getMe } from '../../api/auth';
 import type { UserProfile } from '../../types/domain';
@@ -34,9 +35,11 @@ export default function AppLayout() {
     }, [navigate]);
 
     const menuItems = [
-        { key: '/live', icon: <HeartOutlined />, label: 'Live Monitor' },
-        { key: '/alerts', icon: <AlertOutlined />, label: 'Alerts' },
-        { key: '/sessions', icon: <DesktopOutlined />, label: 'Sessions' },
+        { key: '/overview', icon: <DashboardOutlined />, label: 'Triage Board' },
+        { key: '/live', icon: <MedicineBoxOutlined />, label: 'Patient Monitor' },
+        { key: '/patients', icon: <TeamOutlined />, label: 'Patients' },
+        { key: '/stays', icon: <SolutionOutlined />, label: 'ICU Stays' },
+        { key: '/alerts', icon: <AlertOutlined />, label: 'Sepsis Alerts' },
         { key: '/analytics', icon: <BarChartOutlined />, label: 'Analytics' },
         {
             key: 'mlops-group',
@@ -80,17 +83,23 @@ export default function AppLayout() {
                 style={{ paddingTop: 16 }}
             >
                 <div style={{ textAlign: 'center', padding: '0 16px 24px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                    <HeartOutlined style={{ fontSize: 28, color: '#00d4aa' }} />
+                    <MedicineBoxOutlined style={{ fontSize: 28, color: '#00d4aa' }} />
                     {!collapsed && (
                         <Text strong style={{ display: 'block', marginTop: 8, color: '#e5e7eb', fontSize: 14 }}>
-                            ECG CDSS
+                            Sepsis CDSS
                         </Text>
                     )}
                 </div>
                 <Menu
                     theme="dark"
                     mode="inline"
-                    selectedKeys={[location.pathname]}
+                    selectedKeys={[
+                        location.pathname.startsWith('/stays')
+                            ? '/stays'
+                            : location.pathname.startsWith('/patients')
+                                ? '/patients'
+                                : location.pathname,
+                    ]}
                     items={menuItems}
                     onClick={({ key }) => navigate(key)}
                     style={{ background: 'transparent', borderRight: 0, marginTop: 8 }}
@@ -109,7 +118,7 @@ export default function AppLayout() {
                     }}
                 >
                     <Text style={{ fontSize: 16, fontWeight: 500 }}>
-                        Real-time Arrhythmia Detection
+                        Sepsis Early-Warning — ICU Monitoring
                     </Text>
                     <Dropdown menu={userMenu} placement="bottomRight">
                         <Space style={{ cursor: 'pointer' }}>

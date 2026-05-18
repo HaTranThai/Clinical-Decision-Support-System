@@ -1,5 +1,3 @@
-/** Domain types for ECG CDSS frontend */
-
 export interface UserProfile {
     user_id: string;
     username: string;
@@ -7,35 +5,32 @@ export interface UserProfile {
     role: string;
 }
 
-export interface Session {
-    session_id: string;
-    patient_id: string | null;
+export interface ICUStay {
+    stay_id: string;
+    patient_id: string;
+    patient_name: string | null;
     start_time: string | null;
     end_time: string | null;
-    source_type: string | null;
     status: string;
-    record_name: string | null;
+    source_record: string | null;
 }
 
-export interface Prediction {
+export interface SepsisPrediction {
     pred_id: string;
-    session_id: string;
-    beat_ts_sec: number;
-    pred_class: string;
-    confidence: number | null;
-    p_a: number | null;
-    probs_json: Record<string, number> | null;
+    stay_id: string;
+    hour: number;
+    risk_score: number;
+    risk_level: string;
     created_at: string | null;
 }
 
 export interface Alert {
     alert_id: string;
-    session_id: string;
+    stay_id: string;
     start_time: string | null;
     last_update: string | null;
-    alert_type: string;
-    status: string;
     severity: number | null;
+    status: string;
     evidence_json: Record<string, any> | null;
 }
 
@@ -53,6 +48,31 @@ export interface AlertDetail extends Alert {
     actions: AlertAction[];
 }
 
+export interface PatientOut {
+    patient_id: string;
+    name: string | null;
+    external_ref: string | null;
+    age: number | null;
+    gender: string | null;
+    stay_count: number;
+}
+
+export interface PatientDetail extends PatientOut {
+    stays: ICUStay[];
+}
+
+export interface OverviewItem {
+    stay_id: string;
+    patient_id: string | null;
+    patient_name: string | null;
+    source_record: string | null;
+    status: string;
+    current_hour: number;
+    risk_score: number;
+    risk_level: string;
+    alert_count: number;
+}
+
 export interface Setting {
     key: string;
     value: string | number | null;
@@ -68,9 +88,8 @@ export interface AnalyticsSummary {
 }
 
 export interface AlertsHourly {
-    hour: string;
+    hour: number;
     count: number;
-    alert_type: string | null;
 }
 
 export interface UserOut {
@@ -83,7 +102,6 @@ export interface UserOut {
     created_at: string | null;
 }
 
-// MLOps types
 export interface MLOpsRun {
     run_id: string;
     run_name: string;
