@@ -1,20 +1,21 @@
-"""Alert Engine Service — consumes predictions, applies alert rules, produces alerts."""
 from __future__ import annotations
 
 import json
 import logging
 import os
 import sys
+import uuid
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "common", "src"))
 
 from confluent_kafka import KafkaError
-from config import TOPIC_ECG_PRED_BEAT, TOPIC_ECG_ALERT
+from config import TOPIC_SEPSIS_PREDICTION, TOPIC_SEPSIS_ALERT
 from kafka import wait_for_kafka
 
 from .config import AlertConfig
 from .state import StateManager
-from .rules import check_v_alert, check_a_alert
+from .rules import check_sepsis_alert
 from .kafka_io import create_consumer, create_producer, produce
 from .db_writer import DBWriter
 
@@ -28,20 +29,18 @@ def main():
 
     logger.info(f"Starting alert engine: {config}")
 
-    # Wait for Kafka
     wait_for_kafka(bootstrap)
 
-    # Initialize
     consumer = create_consumer(
         group_id="alert-engine-group",
-        topics=[TOPIC_ECG_PRED_BEAT],
+        topics=[TOPIC_SEPSIS_PREDICTION],
     )
     producer = create_producer()
     state_mgr = StateManager()
     db_writer = DBWriter()
 
+    processed = 0
     alert_count = 0
-    beat_count = 0
 
     logger.info("Alert engine started. Waiting for predictions...")
 
@@ -62,44 +61,31 @@ def main():
                 logger.error(f"Failed to parse: {e}")
                 continue
 
-            session_id = value.get("session_id", "")
-            beat_ts = value.get("beat_ts_sec", 0)
-            pred_class = value.get("pred_class", "N")
-            pA = value.get("pA", 0)
-            confidence = value.get("confidence", 0)
+            stay_id = value.get("stay_id", "")
+            patient_id = value.get("patient_id", "")
+            hour = int(value.get("hour", 0))
+            risk_score = float(value.get("risk_score", 0.0))
 
-            # Add beat to session state
-            session_state = state_mgr.get_session(session_id)
-            session_state.add_beat(beat_ts, pred_class, pA, confidence)
-            beat_count += 1
+            state = state_mgr.get(stay_id)
+            state.add(hour, risk_score)
+            processed += 1
 
-            # Optionally persist prediction
-            db_writer.insert_prediction(session_id, value)
-
-            # Check V alert
-            v_alert = check_v_alert(session_state, beat_ts, config)
-            if v_alert:
-                v_alert["session_id"] = session_id
-                v_alert["model_version"] = value.get("model_version", "mitbih_v25")
-                produce(producer, TOPIC_ECG_ALERT, v_alert, key=session_id)
-                db_writer.insert_alert(session_id, v_alert)
+            alert = check_sepsis_alert(state, hour, risk_score, config)
+            if alert:
+                alert["alert_id"] = str(uuid.uuid4())
+                alert["stay_id"] = stay_id
+                alert["patient_id"] = patient_id
+                produce(producer, TOPIC_SEPSIS_ALERT, alert, key=stay_id)
+                db_writer.insert_alert(alert)
+                producer.flush()
                 alert_count += 1
-                logger.warning(f"🚨 V ALERT: session={session_id[:8]}... count={v_alert['evidence']['count']}")
+                logger.warning(
+                    f"SEPSIS ALERT: stay={stay_id[:8]}... hour={hour} "
+                    f"severity={alert['severity']:.3f}"
+                )
 
-            # Check A alert
-            a_alert = check_a_alert(session_state, beat_ts, config)
-            if a_alert:
-                a_alert["session_id"] = session_id
-                a_alert["model_version"] = value.get("model_version", "mitbih_v25")
-                produce(producer, TOPIC_ECG_ALERT, a_alert, key=session_id)
-                db_writer.insert_alert(session_id, a_alert)
-                alert_count += 1
-                logger.warning(f"🚨 A ALERT: session={session_id[:8]}... count={a_alert['evidence']['count']}")
-
-            if beat_count % 100 == 0:
-                logger.info(f"Processed {beat_count} beats, {alert_count} alerts")
-
-            producer.flush()
+            if processed % 100 == 0:
+                logger.info(f"Processed {processed} predictions, {alert_count} alerts")
 
     except KeyboardInterrupt:
         logger.info("Shutting down.")

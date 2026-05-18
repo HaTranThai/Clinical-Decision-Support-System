@@ -1,8 +1,6 @@
-"""Kafka I/O for preprocess buffer service."""
 from __future__ import annotations
 
 import json
-import logging
 import os
 import sys
 
@@ -11,18 +9,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "common",
 from confluent_kafka import Consumer, Producer
 from config import KAFKA_BOOTSTRAP_SERVERS
 
-logger = logging.getLogger(__name__)
-
 
 def create_consumer(group_id: str, topics: list[str]) -> Consumer:
     bootstrap = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", KAFKA_BOOTSTRAP_SERVERS)
-    conf = {
+    consumer = Consumer({
         "bootstrap.servers": bootstrap,
         "group.id": group_id,
         "auto.offset.reset": "latest",
         "enable.auto.commit": True,
-    }
-    consumer = Consumer(conf)
+    })
     consumer.subscribe(topics)
     return consumer
 

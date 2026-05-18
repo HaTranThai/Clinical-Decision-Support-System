@@ -1,30 +1,47 @@
-"""Preprocess Buffer Service — consumes raw ECG, produces waveform + beat_ready."""
 from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import sys
-from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "common", "src"))
 
 from confluent_kafka import KafkaError
-from config import (
-    TOPIC_ECG_RAW,
-    TOPIC_ECG_BEAT_EVENT,
-    TOPIC_ECG_WAVEFORM,
-    TOPIC_ECG_BEAT_READY,
-)
+from config import TOPIC_PATIENT_VITALS, TOPIC_PATIENT_FEATURES
 from kafka import wait_for_kafka
 
-from .buffer import WaveformRingBuffer
-from .preprocess import downsample, normalize_for_display
-from .sqi import compute_sqi
+from .buffer import PatientBuffer
+from .features import engineer_patient, feature_columns
 from .kafka_io import create_consumer, create_producer, produce
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("preprocess-buffer")
+
+ROLLING_WINDOW = 6
+
+
+def _clean_value(value):
+    if value is None:
+        return None
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(f) or math.isinf(f):
+        return None
+    return f
+
+
+def build_features(buffer: PatientBuffer, stay_id: str) -> dict | None:
+    df = buffer.frame(stay_id)
+    if df.empty:
+        return None
+    engineered = engineer_patient(df, stay_id, rolling_window=ROLLING_WINDOW)
+    last = engineered.iloc[-1]
+    cols = feature_columns(ROLLING_WINDOW)
+    return {col: _clean_value(last.get(col)) for col in cols}
 
 
 def main():
@@ -33,12 +50,13 @@ def main():
 
     consumer = create_consumer(
         group_id="preprocess-buffer-group",
-        topics=[TOPIC_ECG_RAW, TOPIC_ECG_BEAT_EVENT],
+        topics=[TOPIC_PATIENT_VITALS],
     )
     producer = create_producer()
-    ring_buffer = WaveformRingBuffer(max_seconds=10.0)
+    buffer = PatientBuffer()
 
     logger.info("Preprocess buffer service started.")
+    processed = 0
 
     try:
         while True:
@@ -51,55 +69,44 @@ def main():
                 logger.error(f"Kafka error: {msg.error()}")
                 continue
 
-            topic = msg.topic()
             try:
                 value = json.loads(msg.value().decode("utf-8"))
             except Exception as e:
                 logger.error(f"Failed to parse message: {e}")
                 continue
 
-            if topic == TOPIC_ECG_RAW:
-                handle_ecg_raw(value, ring_buffer, producer)
-            elif topic == TOPIC_ECG_BEAT_EVENT:
-                handle_beat_event(value, producer)
+            stay_id = value.get("stay_id", "")
+            record = value.get("record", {})
+
+            buffer.add(stay_id, record)
+
+            try:
+                features = build_features(buffer, stay_id)
+            except Exception as e:
+                logger.error(f"Feature engineering failed for {stay_id}: {e}", exc_info=True)
+                continue
+
+            if features is None:
+                continue
+
+            features_msg = {
+                "stay_id": stay_id,
+                "patient_id": value.get("patient_id", ""),
+                "hour": value.get("hour", 0),
+                "ts": value.get("ts", ""),
+                "features": features,
+            }
+            produce(producer, TOPIC_PATIENT_FEATURES, features_msg, key=stay_id)
+
+            processed += 1
+            if processed % 50 == 0:
+                logger.info(f"Processed {processed} vitals messages.")
 
     except KeyboardInterrupt:
         logger.info("Shutting down.")
     finally:
         consumer.close()
         producer.flush()
-
-
-def handle_ecg_raw(msg: dict, ring_buffer: WaveformRingBuffer, producer):
-    """Process raw ECG: buffer + produce waveform for UI."""
-    session_id = msg.get("session_id", "")
-    samples = msg.get("samples", [])
-
-    # Append to ring buffer
-    ring_buffer.append(session_id, samples)
-
-    # Compute SQI on first channel
-    sqi = 0.5
-    if samples and len(samples[0]) > 0:
-        sqi = compute_sqi(samples[0], msg.get("fs", 360))
-
-    # Produce waveform for UI (downsample for performance)
-    ds_samples = downsample(samples, factor=2)
-
-    waveform_msg = {
-        "session_id": session_id,
-        "ts_start": msg.get("ts_start", datetime.now(timezone.utc).isoformat()),
-        "fs": msg.get("fs", 360) // 2,  # downsampled fs
-        "lead": msg.get("lead", ["MLII", "V1"]),
-        "samples": ds_samples,
-        "sqi": sqi,
-    }
-    produce(producer, TOPIC_ECG_WAVEFORM, waveform_msg, key=session_id)
-
-
-def handle_beat_event(msg: dict, producer):
-    """Pass-through beat events as ecg_beat_ready."""
-    produce(producer, TOPIC_ECG_BEAT_READY, msg, key=msg.get("session_id", ""))
 
 
 if __name__ == "__main__":

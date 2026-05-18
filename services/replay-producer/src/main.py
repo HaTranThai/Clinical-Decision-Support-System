@@ -1,168 +1,208 @@
-"""Replay Producer — streams MIT-BIH ECG data in real-time to Kafka."""
 from __future__ import annotations
 
+import glob
 import logging
 import os
+import random
 import sys
 import time
 import uuid
 from datetime import datetime, timezone
 
-import numpy as np
-
-# Add common to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "common", "src"))
 
-from config import (
-    KAFKA_BOOTSTRAP_SERVERS,
-    TOPIC_ECG_RAW,
-    TOPIC_ECG_BEAT_EVENT,
-)
-from kafka import wait_for_kafka
-
-from .mitbih_reader import load_record, get_waveform_chunk
-from .beat_extractor import extract_beat_segment, PRE_SEC, POST_SEC
-from .rr_morph_features import compute_rr4, morphology_features
-from .kafka_producer import ECGKafkaProducer
+from kafka import create_producer, produce_message, wait_for_kafka
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("replay-producer")
 
-# Symbol mapping for MIT-BIH
-SYMBOL_MAP = {
-    "N": "N", "L": "N", "R": "N", "e": "N", "j": "N",
-    "A": "A", "a": "A", "S": "A", "J": "A",
-    "V": "V", "E": "V",
-}
+TOPIC_PATIENT_VITALS = "patient_vitals"
+
+DEMO_PATIENT_ID = "e0000000-0000-0000-0000-000000000001"
 
 
-def main():
-    data_dir = os.environ.get("MITBIH_DATA_DIR", "/app/data")
-    record_name = os.environ.get("MITBIH_RECORD", "223")
-    chunk_sec = float(os.environ.get("STREAM_CHUNK_SEC", "1.0"))
-    speed = float(os.environ.get("REALTIME_SPEED", "1.0"))
-    bootstrap = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", KAFKA_BOOTSTRAP_SERVERS)
+def find_psv_files(data_dir: str) -> list[str]:
+    patterns = [
+        os.path.join(data_dir, "training_setA", "*.psv"),
+        os.path.join(data_dir, "training_setB", "*.psv"),
+        os.path.join(data_dir, "training_set*", "*.psv"),
+    ]
+    files: list[str] = []
+    for pat in patterns:
+        files.extend(glob.glob(pat))
+    return sorted(set(files))
 
-    logger.info(f"Starting replay producer: record={record_name}, chunk={chunk_sec}s, speed={speed}x")
 
-    # Wait for Kafka
-    wait_for_kafka(bootstrap)
+def read_psv(path: str) -> tuple[list[str], list[list[str]]]:
+    with open(path, "r") as f:
+        lines = [ln.rstrip("\n") for ln in f if ln.strip()]
+    header = lines[0].split("|")
+    rows = [ln.split("|") for ln in lines[1:]]
+    return header, rows
 
-    # Load record
-    record, annotation = load_record(data_dir, record_name)
-    fs = record.fs
-    p_signal = record.p_signal  # (samples, channels)
-    channels_used = [0, 1] if p_signal.shape[1] >= 2 else [0]
 
-    # Create session
-    session_id = str(uuid.uuid4())
-    patient_id = "d0000000-0000-0000-0000-000000000001"
+def cell_to_value(cell: str):
+    cell = cell.strip()
+    if cell == "" or cell.lower() == "nan":
+        return None
+    try:
+        f = float(cell)
+    except ValueError:
+        return None
+    if f != f:
+        return None
+    return f
 
-    # Insert session into DB so FK constraints are satisfied
+
+def build_record(header: list[str], row: list[str]) -> dict:
+    record: dict = {}
+    for i, col in enumerate(header):
+        value = cell_to_value(row[i]) if i < len(row) else None
+        record[col] = value
+    return record
+
+
+def get_db_conn():
     db_url = os.environ.get(
         "DATABASE_URL",
-        "postgresql+asyncpg://ecg_admin:ecg_secret_2024@postgres:5432/ecg_cdss"
+        "postgresql://sepsis_admin:sepsis_secret_2024@postgres:5432/sepsis_cdss",
     ).replace("postgresql+asyncpg://", "postgresql://")
+    import psycopg2
+
+    conn = psycopg2.connect(db_url)
+    conn.autocommit = True
+    return conn
+
+
+def insert_patient(patient_id: str, external_ref: str, age, gender):
     try:
-        import psycopg2
-        conn = psycopg2.connect(db_url)
-        conn.autocommit = True
+        conn = get_db_conn()
         cur = conn.cursor()
+        age_val = int(age) if age is not None else None
+        gender_val = None
+        if gender is not None:
+            gender_val = "M" if float(gender) >= 0.5 else "F"
+        name_val = f"ICU Patient {external_ref}"
         cur.execute(
-            """INSERT INTO session (session_id, patient_id, source_type, status, record_name)
-               VALUES (%s, %s, 'replay', 'RUNNING', %s)
-               ON CONFLICT DO NOTHING""",
-            (session_id, patient_id, record_name),
+            """INSERT INTO patient (patient_id, external_ref, name, age, gender)
+               VALUES (%s, %s, %s, %s, %s)
+               ON CONFLICT (patient_id) DO NOTHING""",
+            (patient_id, external_ref, name_val, age_val, gender_val),
         )
         cur.close()
         conn.close()
-        logger.info(f"Session {session_id} created in DB.")
     except Exception as e:
-        logger.warning(f"Could not create session in DB (alert-engine writes may fail): {e}")
+        logger.warning(f"Could not create patient in DB: {e}")
 
-    # Build beat list from annotations
-    beat_samples = list(annotation.sample)
-    beat_symbols = list(annotation.symbol)
 
-    # Pre-compute beat events
-    beat_events = []
-    for i, (samp, sym) in enumerate(zip(beat_samples, beat_symbols)):
-        mapped_sym = SYMBOL_MAP.get(sym, None)
-        if mapped_sym is None:
-            continue
+def insert_icu_stay(stay_id: str, patient_id: str, source_record: str):
+    try:
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO icu_stay (stay_id, patient_id, start_time, status, source_record)
+               VALUES (%s, %s, %s, 'RUNNING', %s)
+               ON CONFLICT DO NOTHING""",
+            (stay_id, patient_id, datetime.now(timezone.utc), source_record),
+        )
+        cur.close()
+        conn.close()
+        logger.info(f"icu_stay {stay_id} created in DB.")
+    except Exception as e:
+        logger.warning(f"Could not create icu_stay in DB: {e}")
 
-        seg = extract_beat_segment(p_signal, samp, fs, channels_used)
-        if seg is None:
-            continue
 
-        rr4 = compute_rr4(beat_samples, i, fs)
-        m8 = morphology_features(seg)
+def end_icu_stay(stay_id: str):
+    try:
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE icu_stay SET status='ENDED', end_time=%s WHERE stay_id=%s",
+            (datetime.now(timezone.utc), stay_id),
+        )
+        cur.close()
+        conn.close()
+        logger.info(f"icu_stay {stay_id} marked ENDED.")
+    except Exception as e:
+        logger.warning(f"Could not update icu_stay in DB: {e}")
 
-        beat_events.append({
-            "session_id": session_id,
-            "record_name": record_name,
-            "beat_ts_sec": float(samp / fs),
-            "true_sym": mapped_sym,
-            "fs": fs,
-            "seg": seg.tolist(),
-            "rr4": rr4,
-            "m8": m8,
-            "channels_used": channels_used,
-            "seg_len": seg.shape[1],
+
+def main():
+    bootstrap = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
+    data_dir = os.environ.get("SEPSIS_DATA_DIR", "/app/data")
+    sepsis_record = os.environ.get("SEPSIS_RECORD", "").strip()
+    hour_interval = float(os.environ.get("HOUR_INTERVAL_SEC", "1.0"))
+    n_patients = int(os.environ.get("N_PATIENTS", "1"))
+
+    logger.info(
+        f"Starting replay producer: data_dir={data_dir}, "
+        f"hour_interval={hour_interval}s, n_patients={n_patients}"
+    )
+
+    wait_for_kafka(bootstrap)
+
+    all_files = find_psv_files(data_dir)
+    if not all_files:
+        logger.error(f"No .psv files found under {data_dir}")
+        sys.exit(1)
+
+    if sepsis_record:
+        selected = [f for f in all_files if os.path.basename(f).replace(".psv", "") == sepsis_record]
+        if not selected:
+            selected = [f for f in all_files if sepsis_record in os.path.basename(f)]
+        if not selected:
+            logger.error(f"Record {sepsis_record} not found, falling back to random.")
+            selected = random.sample(all_files, min(n_patients, len(all_files)))
+    else:
+        selected = random.sample(all_files, min(n_patients, len(all_files)))
+
+    logger.info(f"Selected patients: {[os.path.basename(f) for f in selected]}")
+
+    producer = create_producer(bootstrap)
+
+    patients = []
+    for path in selected:
+        header, rows = read_psv(path)
+        stay_id = str(uuid.uuid4())
+        patient_id = DEMO_PATIENT_ID if len(selected) == 1 else str(uuid.uuid4())
+        source_record = os.path.basename(path).replace(".psv", "")
+        first = build_record(header, rows[0]) if rows else {}
+        insert_patient(patient_id, source_record, first.get("Age"), first.get("Gender"))
+        insert_icu_stay(stay_id, patient_id, source_record)
+        patients.append({
+            "stay_id": stay_id,
+            "patient_id": patient_id,
+            "source_record": source_record,
+            "header": header,
+            "rows": rows,
         })
 
-    logger.info(f"Prepared {len(beat_events)} beat events for session {session_id}")
+    max_hours = max(len(p["rows"]) for p in patients)
 
-    # Initialize Kafka producer
-    producer = ECGKafkaProducer(bootstrap)
-
-    # Stream waveform + beat events
-    chunk_samples = int(chunk_sec * fs)
-    total_samples = p_signal.shape[0]
-    total_chunks = total_samples // chunk_samples
-    beat_event_idx = 0
-
-    logger.info(f"Streaming {total_chunks} chunks ({total_samples / fs:.1f}s total)")
-
-    for chunk_i in range(total_chunks):
-        start_sample = chunk_i * chunk_samples
-        end_sample = start_sample + chunk_samples
-        chunk_time_sec = start_sample / fs
-
-        # Send waveform chunk
-        waveform = get_waveform_chunk(record, start_sample, chunk_samples)
-        if waveform is not None:
-            ts_start = datetime.now(timezone.utc).isoformat()
-            raw_msg = {
-                "session_id": session_id,
-                "patient_id": patient_id,
-                "ts_start": ts_start,
-                "fs": fs,
-                "lead": record.sig_name[:len(channels_used)],
-                "samples": waveform.tolist(),
+    for hour in range(max_hours):
+        for p in patients:
+            if hour >= len(p["rows"]):
+                continue
+            record = build_record(p["header"], p["rows"][hour])
+            message = {
+                "stay_id": p["stay_id"],
+                "patient_id": p["patient_id"],
+                "hour": hour,
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "record": record,
             }
-            producer.produce(TOPIC_ECG_RAW, raw_msg, key=session_id)
-
-        # Send beat events that fall within this chunk
-        while beat_event_idx < len(beat_events):
-            evt = beat_events[beat_event_idx]
-            if evt["beat_ts_sec"] < end_sample / fs:
-                producer.produce(TOPIC_ECG_BEAT_EVENT, evt, key=session_id)
-                beat_event_idx += 1
-            else:
-                break
-
+            produce_message(producer, TOPIC_PATIENT_VITALS, message, key=p["stay_id"])
         producer.flush()
+        if hour % 10 == 0:
+            logger.info(f"Streamed hour {hour}/{max_hours}")
+        time.sleep(hour_interval)
 
-        # Real-time pacing
-        sleep_time = chunk_sec / speed
-        time.sleep(sleep_time)
-
-        if chunk_i % 10 == 0:
-            logger.info(f"Chunk {chunk_i}/{total_chunks} | t={chunk_time_sec:.1f}s | beats sent: {beat_event_idx}")
-
-    logger.info(f"Replay complete. Total beats sent: {beat_event_idx}")
     producer.flush()
+
+    for p in patients:
+        end_icu_stay(p["stay_id"])
+
+    logger.info("Replay complete.")
 
 
 if __name__ == "__main__":

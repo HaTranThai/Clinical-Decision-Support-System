@@ -1,4 +1,3 @@
-"""Shared configuration reader from environment variables."""
 import os
 
 
@@ -14,14 +13,9 @@ def get_env_int(key: str, default: int = 0) -> int:
     return int(os.environ.get(key, str(default)))
 
 
-# Common config
-KAFKA_BOOTSTRAP_SERVERS = get_env("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
-DATABASE_URL = get_env("DATABASE_URL", "postgresql+asyncpg://ecg_admin:ecg_secret_2024@localhost:5432/ecg_cdss")
+KAFKA_BOOTSTRAP_SERVERS = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
 
-# Topics
-TOPIC_ECG_RAW = "ecg_raw"
-TOPIC_ECG_BEAT_EVENT = "ecg_beat_event"
-TOPIC_ECG_WAVEFORM = "ecg_waveform"
-TOPIC_ECG_BEAT_READY = "ecg_beat_ready"
-TOPIC_ECG_PRED_BEAT = "ecg_pred_beat"
-TOPIC_ECG_ALERT = "ecg_alert"
+TOPIC_PATIENT_VITALS = "patient_vitals"
+TOPIC_PATIENT_FEATURES = "patient_features"
+TOPIC_SEPSIS_PREDICTION = "sepsis_prediction"
+TOPIC_SEPSIS_ALERT = "sepsis_alert"

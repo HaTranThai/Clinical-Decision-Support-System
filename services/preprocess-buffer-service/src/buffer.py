@@ -1,57 +1,31 @@
-"""Ring buffer for maintaining recent waveform data."""
 from __future__ import annotations
 
-import collections
-from typing import Optional
+import pandas as pd
 
-import numpy as np
+from .schema import ALL_COLUMNS, LABEL
 
 
-class WaveformRingBuffer:
-    """Circular buffer storing last N seconds of waveform data per session."""
+class PatientBuffer:
+    def __init__(self, max_hours: int = 2000):
+        self._rows: dict[str, list[dict]] = {}
+        self._max_hours = max_hours
 
-    def __init__(self, max_seconds: float = 10.0, fs: int = 360, n_channels: int = 2):
-        self.max_samples = int(max_seconds * fs)
-        self.fs = fs
-        self.n_channels = n_channels
-        self._buffers: dict[str, collections.deque] = {}
+    def add(self, stay_id: str, record: dict):
+        rows = self._rows.setdefault(stay_id, [])
+        rows.append(record)
+        if len(rows) > self._max_hours:
+            del rows[0]
 
-    def append(self, session_id: str, samples: list[list[float]]):
-        """Append waveform samples to session buffer.
-        
-        Args:
-            session_id: Session identifier
-            samples: (n_channels, chunk_len) waveform data
-        """
-        if session_id not in self._buffers:
-            self._buffers[session_id] = collections.deque(maxlen=self.max_samples)
+    def frame(self, stay_id: str) -> pd.DataFrame:
+        rows = self._rows.get(stay_id, [])
+        normalized = []
+        for record in rows:
+            normalized.append({col: record.get(col, None) for col in ALL_COLUMNS})
+        df = pd.DataFrame(normalized, columns=ALL_COLUMNS)
+        for col in ALL_COLUMNS:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df[LABEL] = df[LABEL].fillna(0)
+        return df
 
-        buf = self._buffers[session_id]
-        # samples is (channels, chunk_len) — store as list of per-sample channel values
-        n_samples = len(samples[0]) if samples else 0
-        for i in range(n_samples):
-            point = [ch[i] if i < len(ch) else 0.0 for ch in samples]
-            buf.append(point)
-
-    def get_last(self, session_id: str, seconds: float = 10.0) -> Optional[list[list[float]]]:
-        """Get last N seconds of data as (channels, samples)."""
-        if session_id not in self._buffers:
-            return None
-
-        buf = self._buffers[session_id]
-        n = min(int(seconds * self.fs), len(buf))
-        if n == 0:
-            return None
-
-        data = list(buf)[-n:]
-        # Transpose: list of [ch0, ch1, ...] → [[ch0_samples], [ch1_samples], ...]
-        n_ch = len(data[0]) if data else self.n_channels
-        result = [[] for _ in range(n_ch)]
-        for point in data:
-            for ch in range(n_ch):
-                result[ch].append(point[ch] if ch < len(point) else 0.0)
-
-        return result
-
-    def remove_session(self, session_id: str):
-        self._buffers.pop(session_id, None)
+    def remove(self, stay_id: str):
+        self._rows.pop(stay_id, None)

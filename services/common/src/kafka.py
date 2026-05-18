@@ -15,7 +15,7 @@ def create_producer(bootstrap_servers: str) -> Producer:
     """Create a Kafka producer."""
     conf = {
         "bootstrap.servers": bootstrap_servers,
-        "client.id": "ecg-producer",
+        "client.id": "sepsis-producer",
         "acks": "1",
     }
     return Producer(conf)

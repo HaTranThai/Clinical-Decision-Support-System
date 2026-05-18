@@ -1,45 +1,34 @@
-"""Per-session state management for alert engine."""
 from __future__ import annotations
 
 import collections
-import time
 from typing import NamedTuple
 
 
-class BeatRecord(NamedTuple):
-    ts_sec: float
-    pred_class: str
-    pA: float
-    confidence: float
+class RiskRecord(NamedTuple):
+    hour: int
+    risk_score: float
 
 
-class SessionState:
-    """State for a single monitoring session."""
-
+class StayState:
     def __init__(self):
-        self.beats: collections.deque[BeatRecord] = collections.deque(maxlen=5000)
-        self.last_v_alert_time: float = 0.0
-        self.last_a_alert_time: float = 0.0
+        self.history: collections.deque[RiskRecord] = collections.deque(maxlen=2000)
+        self.last_alert_hour: int = -10000
 
-    def add_beat(self, ts_sec: float, pred_class: str, pA: float, confidence: float):
-        self.beats.append(BeatRecord(ts_sec, pred_class, pA, confidence))
+    def add(self, hour: int, risk_score: float):
+        self.history.append(RiskRecord(hour, risk_score))
 
-    def get_recent_beats(self, current_ts: float, window_sec: float) -> list[BeatRecord]:
-        """Get beats within the time window."""
-        cutoff = current_ts - window_sec
-        return [b for b in self.beats if b.ts_sec >= cutoff]
+    def recent(self, n: int) -> list[RiskRecord]:
+        return list(self.history)[-n:]
 
 
 class StateManager:
-    """Manage per-session state."""
-
     def __init__(self):
-        self._sessions: dict[str, SessionState] = {}
+        self._stays: dict[str, StayState] = {}
 
-    def get_session(self, session_id: str) -> SessionState:
-        if session_id not in self._sessions:
-            self._sessions[session_id] = SessionState()
-        return self._sessions[session_id]
+    def get(self, stay_id: str) -> StayState:
+        if stay_id not in self._stays:
+            self._stays[stay_id] = StayState()
+        return self._stays[stay_id]
 
-    def remove_session(self, session_id: str):
-        self._sessions.pop(session_id, None)
+    def remove(self, stay_id: str):
+        self._stays.pop(stay_id, None)
