@@ -30,30 +30,32 @@ services:
   postgres:
     image: postgres:15-alpine
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-ecg_cdss}
-      POSTGRES_USER: ${POSTGRES_USER:-ecg_admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ecg_secret_2024}
+      POSTGRES_DB: ${POSTGRES_DB:-sepsis_cdss}
+      POSTGRES_USER: ${POSTGRES_USER:-sepsis_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sepsis_secret_2024}
     ports:
-      - "5432:5432"
+      - "15432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ecg_admin} -d ${POSTGRES_DB:-ecg_cdss}" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sepsis_admin} -d ${POSTGRES_DB:-sepsis_cdss}" ]
       interval: 5s
       timeout: 5s
       retries: 5
 
   mlflow:
-    image: ghcr.io/mlflow/mlflow:v2.12.2
+    image: ghcr.io/mlflow/mlflow:v3.12.0
     ports:
-      - "5000:5000"
+      - "15000:5000"
     command: >
       mlflow server
       --host 0.0.0.0
       --port 5000
       --backend-store-uri sqlite:////mlflow/mlflow.db
-      --default-artifact-root /mlflow/artifacts
+      --artifacts-destination /mlflow/artifacts
+      --serve-artifacts
+      --allowed-hosts mlflow:5000,localhost:5000,localhost:15000,127.0.0.1:15000
     volumes:
       - mlflow-data:/mlflow
 
@@ -63,9 +65,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "18800:8000"
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://ecg_admin:ecg_secret_2024@postgres:5432/ecg_cdss}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://sepsis_admin:sepsis_secret_2024@postgres:5432/sepsis_cdss}
       SECRET_KEY: ${SECRET_KEY:-change-me-super-secret-key-at-least-32-chars}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
@@ -74,6 +76,8 @@ services:
       AIRFLOW_API_URL: ${AIRFLOW_API_URL:-http://airflow-webserver:8080/api/v1}
       AIRFLOW_USERNAME: ${AIRFLOW_USERNAME:-admin}
       AIRFLOW_PASSWORD: ${AIRFLOW_PASSWORD:-admin123}
+    volumes:
+      - ./data/processed:/app/data/processed:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -87,7 +91,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "13000:3000"
     depends_on:
       - backend
 
@@ -98,12 +102,12 @@ services:
       dockerfile: replay-producer/Dockerfile
     environment:
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
-      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://ecg_admin:ecg_secret_2024@postgres:5432/ecg_cdss}
-      MITBIH_RECORD: ${MITBIH_RECORD:-223}
-      STREAM_CHUNK_SEC: ${STREAM_CHUNK_SEC:-1.0}
-      REALTIME_SPEED: ${REALTIME_SPEED:-1.0}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://sepsis_admin:sepsis_secret_2024@postgres:5432/sepsis_cdss}
+      SEPSIS_RECORD: ${SEPSIS_RECORD:-}
+      HOUR_INTERVAL_SEC: ${HOUR_INTERVAL_SEC:-1.0}
+      N_PATIENTS: ${N_PATIENTS:-3}
     volumes:
-      - ./services/replay-producer/data:/app/data
+      - ./Data/sepsis-2019:/app/data
     depends_on:
       kafka:
         condition: service_healthy
@@ -130,10 +134,9 @@ services:
       dockerfile: inference-service/Dockerfile
     environment:
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
-      MODEL_CHECKPOINT: ${MODEL_CHECKPOINT:-artifacts/best_mitbih_v25.json}
+      MODEL_CHECKPOINT: ${MODEL_CHECKPOINT:-artifacts/sepsis_model.json}
       MODEL_URI: ${MODEL_URI:-}
       MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://mlflow:5000}
-      THR_A: ${THR_A:-0.65}
     volumes:
       - ./services/inference-service/artifacts:/app/artifacts
     depends_on:
@@ -148,14 +151,10 @@ services:
       dockerfile: alert-engine-service/Dockerfile
     environment:
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
-      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://ecg_admin:ecg_secret_2024@postgres:5432/ecg_cdss}
-      V_WINDOW: ${V_WINDOW:-10}
-      V_THRESH: ${V_THRESH:-5}
-      COOLDOWN_V: ${COOLDOWN_V:-20}
-      A_WINDOW: ${A_WINDOW:-30}
-      A_THRESH: ${A_THRESH:-4}
-      COOLDOWN_A: ${COOLDOWN_A:-45}
-      THR_A: ${THR_A:-0.65}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://sepsis_admin:sepsis_secret_2024@postgres:5432/sepsis_cdss}
+      ALERT_RISK_THRESHOLD: ${ALERT_RISK_THRESHOLD:-0.6}
+      SUSTAINED_HOURS: ${SUSTAINED_HOURS:-3}
+      COOLDOWN_HOURS: ${COOLDOWN_HOURS:-12}
     depends_on:
       postgres:
         condition: service_healthy
@@ -168,23 +167,27 @@ services:
     build:
       context: ./airflow
       dockerfile: Dockerfile
+    user: "0:0"
     entrypoint: /bin/bash
     command:
       - -c
       - |
+        mkdir -p /app/data/processed /app/artifacts /app/services/inference-service/artifacts &&
+        chmod -R 777 /app/data/processed /app/artifacts /app/services/inference-service/artifacts &&
         airflow db migrate &&
         airflow users create \
           --username admin \
           --firstname Admin \
           --lastname User \
           --role Admin \
-          --email admin@ecg-cdss.local \
+          --email admin@sepsis-cdss.local \
           --password admin123 || true
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://ecg_admin:ecg_secret_2024@postgres:5432/airflow
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://sepsis_admin:sepsis_secret_2024@postgres:5432/airflow
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__FERNET_KEY: "46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLt0nIe3aI="
+      AIRFLOW__WEBSERVER__SECRET_KEY: "sepsis-cdss-airflow-shared-secret-key-2026"
       MLFLOW_TRACKING_URI: http://mlflow:5000
     volumes:
       - ./airflow/dags:/opt/airflow/dags
@@ -206,12 +209,13 @@ services:
       dockerfile: Dockerfile
     command: airflow webserver
     ports:
-      - "8080:8080"
+      - "18080:8080"
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://ecg_admin:ecg_secret_2024@postgres:5432/airflow
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://sepsis_admin:sepsis_secret_2024@postgres:5432/airflow
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__FERNET_KEY: "46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLt0nIe3aI="
+      AIRFLOW__WEBSERVER__SECRET_KEY: "sepsis-cdss-airflow-shared-secret-key-2026"
       AIRFLOW__API__AUTH_BACKENDS: "airflow.api.auth.backend.basic_auth"
       MLFLOW_TRACKING_URI: http://mlflow:5000
     volumes:
@@ -242,9 +246,10 @@ services:
     command: airflow scheduler
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://ecg_admin:ecg_secret_2024@postgres:5432/airflow
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://sepsis_admin:sepsis_secret_2024@postgres:5432/airflow
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__FERNET_KEY: "46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLt0nIe3aI="
+      AIRFLOW__WEBSERVER__SECRET_KEY: "sepsis-cdss-airflow-shared-secret-key-2026"
       MLFLOW_TRACKING_URI: http://mlflow:5000
     volumes:
       - ./airflow/dags:/opt/airflow/dags

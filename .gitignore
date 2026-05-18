@@ -5,6 +5,7 @@ data/
 artifacts/
 mlruns/
 mlartifacts/
+mlflow_local.db
 .dvc/cache/
 .venv/
 __pycache__/

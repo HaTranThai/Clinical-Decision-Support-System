@@ -1,4 +1,4 @@
--- ECG CDSS Database Initialization
+-- Sepsis Early-Warning CDSS Database Initialization
 -- ===================================
 
 -- Extensions
@@ -25,18 +25,19 @@ CREATE TABLE IF NOT EXISTS "user" (
 CREATE TABLE IF NOT EXISTS patient (
     patient_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     external_ref VARCHAR(100),
-    display_name VARCHAR(200)
+    name VARCHAR(200),
+    age INTEGER,
+    gender VARCHAR(10)
 );
 
--- ── SESSION ──
-CREATE TABLE IF NOT EXISTS session (
-    session_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    patient_id UUID REFERENCES patient(patient_id),
+-- ── ICU STAY ──
+CREATE TABLE IF NOT EXISTS icu_stay (
+    stay_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    patient_id UUID NOT NULL REFERENCES patient(patient_id),
     start_time TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     end_time TIMESTAMP WITH TIME ZONE,
-    source_type VARCHAR(50) DEFAULT 'replay',
     status VARCHAR(20) DEFAULT 'RUNNING',
-    record_name VARCHAR(100)
+    source_record VARCHAR(100)
 );
 
 -- ── MODEL VERSION ──
@@ -49,29 +50,26 @@ CREATE TABLE IF NOT EXISTS model_version (
     is_active BOOLEAN DEFAULT TRUE
 );
 
--- ── PREDICTION BEAT ──
-CREATE TABLE IF NOT EXISTS prediction_beat (
+-- ── SEPSIS PREDICTION ──
+CREATE TABLE IF NOT EXISTS sepsis_prediction (
     pred_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    session_id UUID NOT NULL REFERENCES session(session_id),
+    stay_id UUID NOT NULL REFERENCES icu_stay(stay_id),
     model_version_id UUID REFERENCES model_version(model_version_id),
-    beat_ts_sec DOUBLE PRECISION NOT NULL,
-    pred_class VARCHAR(5) NOT NULL,
-    confidence DOUBLE PRECISION,
-    p_a DOUBLE PRECISION,
-    probs_json JSONB,
+    hour INTEGER NOT NULL,
+    risk_score DOUBLE PRECISION NOT NULL,
+    risk_level VARCHAR(10),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- ── ALERT ──
 CREATE TABLE IF NOT EXISTS alert (
     alert_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    session_id UUID NOT NULL REFERENCES session(session_id),
+    stay_id UUID NOT NULL REFERENCES icu_stay(stay_id),
     model_version_id UUID REFERENCES model_version(model_version_id),
     start_time TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     last_update TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    alert_type VARCHAR(5) NOT NULL,
-    status VARCHAR(20) DEFAULT 'NEW',
     severity DOUBLE PRECISION DEFAULT 0.0,
+    status VARCHAR(20) DEFAULT 'NEW',
     evidence_json JSONB
 );
 
@@ -103,9 +101,9 @@ CREATE TABLE IF NOT EXISTS setting_version (
 );
 
 -- Indexes
-CREATE INDEX IF NOT EXISTS idx_prediction_beat_session ON prediction_beat(session_id);
-CREATE INDEX IF NOT EXISTS idx_prediction_beat_ts ON prediction_beat(beat_ts_sec);
-CREATE INDEX IF NOT EXISTS idx_alert_session ON alert(session_id);
+CREATE INDEX IF NOT EXISTS idx_sepsis_pred_stay ON sepsis_prediction(stay_id);
+CREATE INDEX IF NOT EXISTS idx_sepsis_pred_hour ON sepsis_prediction(hour);
+CREATE INDEX IF NOT EXISTS idx_alert_stay ON alert(stay_id);
 CREATE INDEX IF NOT EXISTS idx_alert_status ON alert(status);
 CREATE INDEX IF NOT EXISTS idx_alert_action_alert ON alert_action(alert_id);
 
@@ -140,27 +138,22 @@ ON CONFLICT (username) DO NOTHING;
 -- Model version
 INSERT INTO model_version (model_version_id, name, artifact_uri, is_active) VALUES
     ('c0000000-0000-0000-0000-000000000001',
-     'mitbih_v25',
-     'artifacts/best_mitbih_v25.json',
+     'sepsis_v1',
+     'artifacts/sepsis_model.json',
      TRUE)
 ON CONFLICT DO NOTHING;
 
 -- Demo patient
-INSERT INTO patient (patient_id, external_ref, display_name) VALUES
-    ('d0000000-0000-0000-0000-000000000001', 'MIT-BIH-223', 'Demo Patient (Record 223)')
+INSERT INTO patient (patient_id, external_ref, name, age, gender) VALUES
+    ('e0000000-0000-0000-0000-000000000001', 'MIMIC-DEMO-001', 'Demo Patient', 65, 'M')
 ON CONFLICT DO NOTHING;
 
 -- System settings
 INSERT INTO system_setting (key, current_value_json) VALUES
-    ('thr_A', '0.65'),
-    ('V_WINDOW', '10'),
-    ('V_THRESH', '5'),
-    ('COOLDOWN_V', '20'),
-    ('A_WINDOW', '30'),
-    ('A_THRESH', '4'),
-    ('COOLDOWN_A', '45'),
-    ('STREAM_CHUNK_SEC', '1.0'),
-    ('REALTIME_SPEED', '1.0')
+    ('alert_risk_threshold', '0.6'),
+    ('sustained_hours', '3'),
+    ('cooldown_hours', '12'),
+    ('hour_interval_sec', '1.0')
 ON CONFLICT (key) DO NOTHING;
 
 -- ===================================
@@ -172,4 +165,4 @@ SELECT 'CREATE DATABASE airflow'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'airflow')\gexec
 
 \c airflow
-GRANT ALL PRIVILEGES ON DATABASE airflow TO ecg_admin;
+GRANT ALL PRIVILEGES ON DATABASE airflow TO sepsis_admin;
