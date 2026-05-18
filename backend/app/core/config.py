@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://ecg_admin:ecg_secret_2024@localhost:5432/ecg_cdss"
+    DATABASE_URL: str = "postgresql+asyncpg://sepsis_admin:sepsis_secret_2024@localhost:5432/sepsis_cdss"
 
     # Security
     SECRET_KEY: str = "change-me-super-secret-key-at-least-32-chars"

@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.api.routes import auth, users, sessions, alerts, settings as settings_route, analytics, health, mlops as mlops_route
+from app.api.routes import auth, users, stays, alerts, settings as settings_route, analytics, health, mlops as mlops_route, patients, overview
 from app.api.ws.live import router as ws_router
 from app.services.kafka_consumer import KafkaConsumerService
 
@@ -20,7 +20,7 @@ kafka_consumer_service = KafkaConsumerService()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting up ECG CDSS Backend...")
+    logger.info("Starting up Sepsis CDSS Backend...")
     # Start Kafka consumer in background
     kafka_consumer_service.start()
     yield
@@ -29,8 +29,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="ECG Real-time CDSS API",
-    description="Real-time Clinical Decision Support System for ECG Arrhythmia Detection",
+    title="Sepsis Early-Warning CDSS API",
+    description="Real-time Clinical Decision Support System for Sepsis Early-Warning",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -48,7 +48,9 @@ app.add_middleware(
 # Routes
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(users.router, prefix="/api/admin/users", tags=["Admin - Users"])
-app.include_router(sessions.router, prefix="/api/sessions", tags=["Sessions"])
+app.include_router(stays.router, prefix="/api/stays", tags=["Stays"])
+app.include_router(patients.router, prefix="/api/patients", tags=["Patients"])
+app.include_router(overview.router, prefix="/api/overview", tags=["Overview"])
 app.include_router(alerts.router, prefix="/api/alerts", tags=["Alerts"])
 app.include_router(settings_route.router, prefix="/api/admin/settings", tags=["Admin - Settings"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])

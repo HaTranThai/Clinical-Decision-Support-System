@@ -16,7 +16,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 DATASET_STATS_PATH = Path("/app/data/processed/dataset_stats.json")
-MODEL_NAME = "ecg-cdss-xgb-rr4-morph8"
+MODEL_NAME = "sepsis-xgb-earlywarning"
 
 
 # ── Internal HTTP helpers ──────────────────────────────────────────────────────
@@ -119,7 +119,7 @@ async def get_experiments(_user=Depends(get_current_user)):
 async def get_registry(_user=Depends(get_current_user)):
     """List all versions of the production model from MLflow Model Registry."""
     try:
-        data = await _mlflow_post(
+        data = await _mlflow_get(
             "/api/2.0/mlflow/model-versions/search",
             {
                 "filter": f"name='{MODEL_NAME}'",
@@ -155,10 +155,10 @@ async def get_registry(_user=Depends(get_current_user)):
 
 @router.get("/pipeline/status")
 async def get_pipeline_status(_user=Depends(get_current_user)):
-    """Return the status of the Airflow DAG ecg_daily_retrain."""
+    """Return the status of the Airflow DAG sepsis_daily_retrain."""
     try:
         data = await _airflow_get(
-            "/dags/ecg_daily_retrain/dagRuns",
+            "/dags/sepsis_daily_retrain/dagRuns",
             {"limit": 10, "order_by": "-start_date"},
         )
 
@@ -179,14 +179,14 @@ async def get_pipeline_status(_user=Depends(get_current_user)):
         # Best-effort: fetch next scheduled run from DAG detail endpoint
         next_run: str | None = None
         try:
-            dag_info = await _airflow_get("/dags/ecg_daily_retrain")
+            dag_info = await _airflow_get("/dags/sepsis_daily_retrain")
             next_run = dag_info.get("next_dagrun")
         except Exception:
             pass
 
         return {
             "available": True,
-            "dag_id": "ecg_daily_retrain",
+            "dag_id": "sepsis_daily_retrain",
             "last_run": last_run,
             "recent_runs": [_transform_run(r) for r in dag_runs[:7]],
             "next_run": next_run,

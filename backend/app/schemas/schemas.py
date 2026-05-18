@@ -1,45 +1,94 @@
-"""Pydantic schemas for sessions, alerts, predictions, settings, analytics, WS."""
 from __future__ import annotations
 from typing import Optional
 from pydantic import BaseModel
 
 
-# ── Sessions ──
-class SessionOut(BaseModel):
-    session_id: str
+class ICUStayOut(BaseModel):
+    stay_id: str
     patient_id: str | None
+    patient_name: str | None
     start_time: str | None
     end_time: str | None
-    source_type: str | None
     status: str
-    record_name: str | None
+    source_record: str | None
     class Config:
         from_attributes = True
 
 
-# ── Predictions ──
-class PredictionOut(BaseModel):
+class CreateStayRequest(BaseModel):
+    patient_name: str
+    external_ref: Optional[str] = None
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    source_record: Optional[str] = None
+
+
+class CreateStayForPatientRequest(BaseModel):
+    source_record: Optional[str] = None
+
+
+class IngestVitalsRequest(BaseModel):
+    hour: int
+    record: dict
+
+
+class PatientOut(BaseModel):
+    patient_id: str
+    name: str | None
+    external_ref: str | None
+    age: int | None
+    gender: str | None
+    stay_count: int = 0
+
+
+class PatientDetailOut(PatientOut):
+    stays: list[ICUStayOut] = []
+
+
+class CreatePatientRequest(BaseModel):
+    name: str
+    external_ref: Optional[str] = None
+    age: Optional[int] = None
+    gender: Optional[str] = None
+
+
+class UpdatePatientRequest(BaseModel):
+    name: Optional[str] = None
+    external_ref: Optional[str] = None
+    age: Optional[int] = None
+    gender: Optional[str] = None
+
+
+class OverviewItem(BaseModel):
+    stay_id: str
+    patient_id: str | None
+    patient_name: str | None
+    source_record: str | None
+    status: str
+    current_hour: int
+    risk_score: float
+    risk_level: str
+    alert_count: int
+
+
+class SepsisPredictionOut(BaseModel):
     pred_id: str
-    session_id: str
-    beat_ts_sec: float
-    pred_class: str
-    confidence: float | None
-    p_a: float | None
-    probs_json: dict | None
+    stay_id: str
+    hour: int
+    risk_score: float
+    risk_level: str | None
     created_at: str | None
     class Config:
         from_attributes = True
 
 
-# ── Alerts ──
 class AlertOut(BaseModel):
     alert_id: str
-    session_id: str
+    stay_id: str
     start_time: str | None
     last_update: str | None
-    alert_type: str
-    status: str
     severity: float | None
+    status: str
     evidence_json: dict | None
     class Config:
         from_attributes = True
@@ -66,17 +115,11 @@ class AlertDetailOut(AlertOut):
     actions: list[AlertActionOut] = []
 
 
-# ── Settings ──
 class SettingsUpdate(BaseModel):
-    thr_A: Optional[float] = None
-    V_WINDOW: Optional[int] = None
-    V_THRESH: Optional[int] = None
-    COOLDOWN_V: Optional[int] = None
-    A_WINDOW: Optional[int] = None
-    A_THRESH: Optional[int] = None
-    COOLDOWN_A: Optional[int] = None
-    STREAM_CHUNK_SEC: Optional[float] = None
-    REALTIME_SPEED: Optional[float] = None
+    alert_risk_threshold: Optional[float] = None
+    sustained_hours: Optional[int] = None
+    cooldown_hours: Optional[int] = None
+    hour_interval_sec: Optional[float] = None
 
 
 class SettingOut(BaseModel):
@@ -84,11 +127,9 @@ class SettingOut(BaseModel):
     value: str | float | int | None
 
 
-# ── Analytics ──
 class AlertsHourly(BaseModel):
-    hour: str
+    hour: int
     count: int
-    alert_type: str | None = None
 
 
 class AnalyticsSummary(BaseModel):
@@ -100,7 +141,6 @@ class AnalyticsSummary(BaseModel):
     avg_response_time_sec: float | None
 
 
-# ── WebSocket ──
 class WSMessage(BaseModel):
-    type: str  # "waveform" | "prediction" | "alert"
+    type: str
     data: dict

@@ -1,4 +1,3 @@
-"""Alerts routes."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -19,7 +18,7 @@ router = APIRouter()
 @router.get("", response_model=list[AlertOut])
 async def list_alerts(
     status: str | None = None,
-    session_id: str | None = None,
+    stay_id: str | None = None,
     limit: int = 50,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
@@ -28,23 +27,21 @@ async def list_alerts(
     query = select(Alert).order_by(Alert.start_time.desc()).offset(offset).limit(limit)
     if status:
         query = query.where(Alert.status == status)
-    if session_id:
-        query = query.where(Alert.session_id == session_id)
+    if stay_id:
+        query = query.where(Alert.stay_id == stay_id)
 
     result = await db.execute(query)
-    alerts_list = result.scalars().all()
     return [
         AlertOut(
             alert_id=str(a.alert_id),
-            session_id=str(a.session_id),
+            stay_id=str(a.stay_id),
             start_time=str(a.start_time) if a.start_time else None,
             last_update=str(a.last_update) if a.last_update else None,
-            alert_type=a.alert_type,
-            status=a.status,
             severity=a.severity,
+            status=a.status,
             evidence_json=a.evidence_json,
         )
-        for a in alerts_list
+        for a in result.scalars().all()
     ]
 
 
@@ -59,12 +56,11 @@ async def get_alert_detail(alert_id: str, db: AsyncSession = Depends(get_db), _u
 
     return AlertDetailOut(
         alert_id=str(a.alert_id),
-        session_id=str(a.session_id),
+        stay_id=str(a.stay_id),
         start_time=str(a.start_time) if a.start_time else None,
         last_update=str(a.last_update) if a.last_update else None,
-        alert_type=a.alert_type,
-        status=a.status,
         severity=a.severity,
+        status=a.status,
         evidence_json=a.evidence_json,
         actions=[
             AlertActionOut(
