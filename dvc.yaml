@@ -1,32 +1,31 @@
 stages:
   prepare_data:
-    cmd: python -m ecg_mlops.prepare_data --params params.yaml
+    cmd: python -m sepsis_mlops.prepare_data --params params.yaml
     deps:
-      - mlops/src/ecg_mlops
-      - services/replay-producer/src
-      - Data/mit-bih-arrhythmia-database-1.0.0/mit-bih-arrhythmia-database-1.0.0
+      - mlops/src/sepsis_mlops
+      - Data/sepsis-2019
       - params.yaml
     outs:
-      - data/processed/train.npz
-      - data/processed/val.npz
-      - data/processed/test.npz
+      - data/processed/train.parquet
+      - data/processed/val.parquet
+      - data/processed/test.parquet
       - data/processed/dataset_stats.json
 
   train:
-    cmd: python -m ecg_mlops.train --params params.yaml --train-data data/processed/train.npz --val-data data/processed/val.npz --output artifacts/model/challenger.json
+    cmd: python -m sepsis_mlops.train --params params.yaml --output artifacts/model/challenger.json
     deps:
-      - mlops/src/ecg_mlops
-      - data/processed/train.npz
-      - data/processed/val.npz
+      - mlops/src/sepsis_mlops
+      - data/processed/train.parquet
+      - data/processed/val.parquet
       - params.yaml
     outs:
       - artifacts/model/challenger.json
 
   evaluate:
-    cmd: python -m ecg_mlops.evaluate --params params.yaml --test-data data/processed/test.npz --checkpoint artifacts/model/challenger.json --output artifacts/evaluation/metrics.json
+    cmd: python -m sepsis_mlops.evaluate --params params.yaml --checkpoint artifacts/model/challenger.json --output artifacts/evaluation/metrics.json
     deps:
-      - mlops/src/ecg_mlops
-      - data/processed/test.npz
+      - mlops/src/sepsis_mlops
+      - data/processed/test.parquet
       - artifacts/model/challenger.json
       - params.yaml
     metrics:
@@ -34,9 +33,9 @@ stages:
           cache: false
 
   compare_and_register:
-    cmd: python -m ecg_mlops.compare_and_register --params params.yaml --checkpoint artifacts/model/challenger.json --metrics artifacts/evaluation/metrics.json
+    cmd: python -m sepsis_mlops.compare_and_register --params params.yaml --checkpoint artifacts/model/challenger.json --metrics artifacts/evaluation/metrics.json
     deps:
-      - mlops/src/ecg_mlops
+      - mlops/src/sepsis_mlops
       - artifacts/model/challenger.json
       - artifacts/evaluation/metrics.json
       - params.yaml

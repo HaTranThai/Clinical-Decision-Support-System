@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ecg-cdss-mlops"
+name = "sepsis-cdss-mlops"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
@@ -11,19 +11,18 @@ dependencies = [
     "mlflow>=2.12",
     "numpy>=1.24",
     "pandas>=2.0",
+    "pyarrow>=14.0",
     "scikit-learn>=1.3",
     "xgboost>=2.0",
-    "wfdb>=4.1",
-    "scipy>=1.11",
     "pyyaml>=6.0",
 ]
 
 [project.scripts]
-ecg-prepare-data = "ecg_mlops.prepare_data:main"
-ecg-train = "ecg_mlops.train:main"
-ecg-evaluate = "ecg_mlops.evaluate:main"
-ecg-compare-register = "ecg_mlops.compare_and_register:main"
-ecg-promote-model = "ecg_mlops.promote_model:main"
+sepsis-prepare-data = "sepsis_mlops.prepare_data:main"
+sepsis-train = "sepsis_mlops.train:main"
+sepsis-evaluate = "sepsis_mlops.evaluate:main"
+sepsis-compare-register = "sepsis_mlops.compare_and_register:main"
+sepsis-promote-model = "sepsis_mlops.promote_model:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
