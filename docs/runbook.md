@@ -1,137 +1,117 @@
-# Runbook — ECG Real-time CDSS
+# Runbook — Sepsis Early-Warning CDSS
 
 ## Prerequisites
 
 - Docker & Docker Compose installed
-- MIT-BIH data files (e.g., `223.dat`, `223.hea`, `223.atr`)
-- Trained model checkpoint `best_mitbih_v25.json`, or run the MLOps pipeline to create one
+- PhysioNet/CinC Challenge 2019 dataset under `Data/sepsis-2019/training_setA` and `training_setB`
+- A serving model `services/inference-service/artifacts/sepsis_model.json`, or run the MLOps
+  pipeline to create one
 
 ## Setup
 
-### 1. Clone & Configure
+### 1. Configure
 
 ```bash
-cd ecg-realtime-cdss
+cd CNM-Final-Project
 cp .env.example .env
 # Edit .env if needed (default values work for local dev)
 ```
 
 ### 2. Place Data Files
 
-```bash
-# Copy MIT-BIH record files
-cp 223.dat 223.hea 223.atr services/replay-producer/data/
+Copy the PhysioNet/CinC 2019 dataset so the layout is:
 
-# Copy model checkpoint, if you already have one
-cp best_mitbih_v25.json services/inference-service/artifacts/
+```text
+Data/sepsis-2019/training_setA/p000001.psv
+Data/sepsis-2019/training_setB/p100001.psv
+...
 ```
 
-To train and promote a checkpoint locally:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e mlops
-docker compose up -d mlflow
-export MLFLOW_TRACKING_URI=http://localhost:5000
-dvc repro
-```
+To train and promote a model locally, see `docs/mlops.md`.
 
 ### 3. Build & Start
 
 ```bash
-docker compose up --build
+docker compose up -d
 ```
 
-This starts all services:
-- **Kafka** — port 9092
-- **PostgreSQL** — port 5432
-- **MLflow** — port 5000
-- **Backend (FastAPI)** — port 8000
-- **Frontend (React)** — port 3000
-- **Replay Producer** — internal
-- **Preprocess Buffer** — internal
-- **Inference Service** — internal
-- **Alert Engine** — internal
+Core services: `postgres`, `kafka`, `mlflow`, `backend`, `frontend`,
+`preprocess-buffer`, `inference-service`, `alert-engine`.
+MLOps services: `airflow-init` (one-shot), `airflow-webserver`, `airflow-scheduler`.
+`replay-producer` is optional — start it only if you want auto-streamed demo patients.
 
-### 4. Wait for Ready
+### 4. Endpoints
 
-Watch logs for:
-```
-backend    | INFO: Uvicorn running on http://0.0.0.0:8000
-frontend   | Local: http://localhost:3000/
-```
-
-### 5. Create Kafka Topics (auto on first start)
-
-Topics are auto-created by the init script. To manually create:
-```bash
-docker compose exec kafka bash /scripts/create-topics.sh
-```
+| UI | URL | Credentials |
+|----|-----|-------------|
+| Web app | http://localhost:13000 | admin / admin123 |
+| MLflow | http://localhost:15000 | — |
+| Airflow | http://localhost:18080 | admin / admin123 |
+| Backend API | http://localhost:18800 | JWT |
 
 ## Demo Flow
 
 ### Step 1: Login
-Open http://localhost:3000 → Login with:
-- Username: `admin`
-- Password: `admin123`
+Open http://localhost:13000 → log in with `admin` / `admin123`.
 
-### Step 2: Live Monitor
-Navigate to `/live` to see:
-- ECG waveform streaming in real-time
-- Current prediction badge (N/A/V with confidence)
-- Active alerts panel
-- Signal quality indicator
+### Step 2: Stream a patient
 
-### Step 3: Alerts
-When the system detects arrhythmia patterns:
-- V alert: ≥ 5 PVC beats in 10-second window
-- A alert: ≥ 4 PAC beats (pA ≥ thr_A) in 30-second window
+Use a test-set record (the model never trained on it — honest demo):
 
-Navigate to `/alerts` to:
-- View alert list with filters
-- Click an alert for details
-- **ACK**: Acknowledge with reason/note
-- **DISMISS**: Dismiss with reason/note
+```bash
+python tools/push_patient.py \
+  --patient-name "Demo Test Patient" \
+  --psv "data/splits/test/p017347.psv" \
+  --interval 5 --stop
+```
 
-### Step 4: Analytics
-Navigate to `/analytics` to view:
-- Alerts per hour chart
-- Dismiss rate
-- Summary statistics
+The script logs in, creates a patient + ICU stay, and pushes hourly vitals.
 
-### Step 5: Admin
-Navigate to `/admin/settings` to adjust:
-- A-threshold (thr_A)
-- Window sizes, thresholds, cooldowns
-- Stream speed
+### Step 3: Watch real-time
+- **Triage Board** (`/overview`) — risk per stay, refreshes every 5s
+- **Patient Monitor** (`/live`) — risk gauge, sepsis risk trajectory, vital signs, alerts
+- **ICU Stays** (`/stays`) — stay list; **Stop** ends a stay
+- **Sepsis Alerts** (`/alerts`) — alerts raised when risk stays above threshold
+- **Analytics** (`/analytics`) — aggregate statistics
 
-Navigate to `/admin/users` to manage user accounts.
+### Step 4: Patient management
+**Patients** → open a patient → **+ New ICU Stay** to add another monitoring session.
+
+### Step 5: MLOps
+- **MLOps → Dashboard / Experiments / Model Registry** in the web app
+- MLflow UI: http://localhost:15000
+- Airflow UI: http://localhost:18080 — DAG `sepsis_daily_retrain`
 
 ## Troubleshooting
 
 ### Kafka not ready
 Services may restart a few times while Kafka initializes. This is normal.
+The `Unknown topic or partition` log on first start is harmless — topics are auto-created
+on first publish.
 
-### No waveform showing
-- Check that MIT-BIH data files are in `services/replay-producer/data/`
-- Check replay-producer logs: `docker compose logs replay-producer`
-
-### No predictions
-- Check that model checkpoint is in `services/inference-service/artifacts/`
-- Or set `MODEL_URI=runs:/<run_id>/model/best_mitbih_mlops.pt` for a tracked MLflow artifact
+### No predictions / no risk on the monitor
+- Check the serving model exists: `services/inference-service/artifacts/sepsis_model.json`
 - Check inference-service logs: `docker compose logs inference-service`
 
+### Airflow task logs show 403
+Webserver and scheduler must share `AIRFLOW__WEBSERVER__SECRET_KEY` (set in docker-compose).
+
+### Out of memory during training
+Training is memory-heavy. Free RAM by stopping non-essential containers, or reduce
+`n_workers` in `prepare_data`.
+
 ### Database issues
-Reset database:
+Reset everything (drops DB, MLflow, and Airflow volumes):
 ```bash
 docker compose down -v
-docker compose up --build
+docker compose up -d
 ```
 
 ## Stopping
 
 ```bash
-docker compose down        # Stop containers
-docker compose down -v     # Stop & remove volumes (reset DB and MLflow volume)
+docker compose stop                       # stop containers
+docker compose stop airflow-webserver airflow-scheduler   # stop only Airflow (save RAM)
+docker compose down                       # stop & remove containers
+docker compose down -v                    # also remove volumes (reset all data)
 ```

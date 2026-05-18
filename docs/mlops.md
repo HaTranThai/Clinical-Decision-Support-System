@@ -1,19 +1,28 @@
 # MLOps Workflow
 
-This project now separates online serving from offline model operations.
+This project separates online serving from offline model operations. The same pipeline
+can be run manually (DVC) or on a schedule (Airflow).
 
 ## Flow
 
 ```text
-MIT-BIH WFDB files
- -> DVC prepare_data
- -> DVC train
- -> MLflow experiment tracking
- -> DVC evaluate
- -> gated promote_model
- -> inference-service/artifacts/best_mitbih_v25.json
+PhysioNet/CinC 2019 .psv files
+ -> prepare_data        (engineer features, patient-level train/val/test split)
+ -> train               (XGBoost challenger, logged to MLflow)
+ -> evaluate            (metrics on the holdout test set)
+ -> compare_and_register (gate by min_auroc, register + promote in MLflow Model Registry)
+ -> services/inference-service/artifacts/sepsis_model.json
  -> realtime serving pipeline
 ```
+
+## Data Split
+
+The split is **patient-level** (each `.psv` file goes entirely into one of train/val/test),
+stratified by septic flag, and deterministic (`random_seed` in `params.yaml`).
+Ratios default to 70 / 15 / 15. This prevents leakage between hours of the same patient.
+
+`tools/organize_splits.py` mirrors the split into `data/splits/{train,val,test}/` as symlinks
+so demo records can be picked from the test set (model never trained on them).
 
 ## Local Setup
 
@@ -24,49 +33,48 @@ source .venv/bin/activate
 pip install -e mlops
 ```
 
-Copy MIT-BIH records into `services/replay-producer/data`, for example:
+Place the PhysioNet/CinC 2019 dataset under `Data/sepsis-2019/training_setA` and
+`Data/sepsis-2019/training_setB`.
 
-```text
-services/replay-producer/data/223.dat
-services/replay-producer/data/223.hea
-services/replay-producer/data/223.atr
-```
-
-Start MLflow tracking:
+## Reproduce The Pipeline — DVC
 
 ```bash
 docker compose up -d mlflow
-```
-
-Open `http://localhost:5000`.
-
-## Reproduce The Pipeline
-
-```bash
-export MLFLOW_TRACKING_URI=http://localhost:5000
+export MLFLOW_TRACKING_URI=http://localhost:15000
 dvc repro
 ```
 
-The promoted serving checkpoint is written to:
+`dvc.yaml` stages: `prepare_data → train → evaluate → compare_and_register`.
 
-```text
-services/inference-service/artifacts/best_mitbih_v25.json
-```
+## Reproduce The Pipeline — Airflow
 
-The promotion stage is gated by `--min-f1` in `dvc.yaml`.
+The DAG `sepsis_daily_retrain` runs the same stages daily at 02:00. Each stage runs
+as an isolated subprocess (`python -m sepsis_mlops.<module>`).
+
+- Airflow UI: http://localhost:18080 (admin / admin123)
+- Trigger manually: `docker compose exec airflow-scheduler airflow dags trigger sepsis_daily_retrain`
+
+## Model Registry & Promotion
+
+- Registered model name: `sepsis-xgb-earlywarning`
+- `compare_and_register` registers the trained challenger as a new version
+- Promotion to Production requires `auroc >= min_auroc` (params.yaml) and a better AUROC than the
+  current champion; otherwise the version is archived
+- On promotion, the serving model is copied to
+  `services/inference-service/artifacts/sepsis_model.json` with a `model_manifest.json`
 
 ## Serving With A Tracked Artifact
 
-The inference service still supports the legacy local checkpoint:
+The inference service serves the local checkpoint by default:
 
 ```bash
-MODEL_CHECKPOINT=artifacts/best_mitbih_v25.json
+MODEL_CHECKPOINT=artifacts/sepsis_model.json
 ```
 
-It also supports MLflow artifact URIs:
+It also supports MLflow artifact URIs (`runs:/`, `models:/`, `mlflow-artifacts:/`):
 
 ```bash
-MODEL_URI=runs:/<run_id>/model/best_mitbih_mlops.pt
+MODEL_URI=runs:/<run_id>/model
 MLFLOW_TRACKING_URI=http://mlflow:5000
 ```
 
@@ -74,9 +82,9 @@ When `MODEL_URI` is set, it takes precedence over `MODEL_CHECKPOINT`.
 
 ## What Is Versioned
 
-- `params.yaml`: reproducible training configuration.
-- `dvc.yaml`: data, training, evaluation, and promotion DAG.
-- MLflow: parameters, metrics, checkpoints, and evaluation artifacts.
-- `services/inference-service/artifacts/model_manifest.json`: latest promotion metadata.
+- `params.yaml`: reproducible training configuration
+- `dvc.yaml`: data, training, evaluation, and registration DAG
+- MLflow: parameters, metrics, checkpoints, and the model registry
+- `services/inference-service/artifacts/model_manifest.json`: latest promotion metadata
 
-Raw WFDB files, processed arrays, checkpoints, and MLflow run directories are intentionally ignored by Git.
+Raw `.psv` files, processed parquet, checkpoints, and MLflow run directories are ignored by Git.

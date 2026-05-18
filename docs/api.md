@@ -1,11 +1,14 @@
-# API Reference — ECG Real-time CDSS
+# API Reference — Sepsis Early-Warning CDSS
 
-Base URL: `http://localhost:8000`
+Base URL: `http://localhost:18800`
+
+All endpoints except `/api/auth/login` and `/api/health` require
+`Authorization: Bearer <token>`. Interactive docs: `http://localhost:18800/docs`.
 
 ## Authentication
 
 ### POST `/api/auth/login`
-Login and receive JWT token.
+Login and receive a JWT token.
 
 **Request Body:**
 ```json
@@ -17,98 +20,98 @@ Login and receive JWT token.
 { "access_token": "eyJ...", "token_type": "bearer" }
 ```
 
-### GET `/api/me`
-Get current user profile. Requires `Authorization: Bearer <token>`.
-
-**Response:**
-```json
-{
-  "user_id": "uuid",
-  "username": "admin",
-  "display_name": "Administrator",
-  "role": "admin"
-}
-```
+### GET `/api/auth/me`
+Get the current user profile.
 
 ---
 
-## Sessions
+## Overview
 
-### GET `/api/sessions`
-List all sessions.
+### GET `/api/overview`
+Triage board — one entry per active ICU stay with the latest sepsis risk.
 
-**Query:** `?status=RUNNING|STOPPED&limit=50&offset=0`
+---
 
-### GET `/api/sessions/{session_id}`
-Get session detail.
+## Patients
 
-### POST `/api/sessions/{session_id}/stop`
-Stop a running session.
+### GET `/api/patients`
+List patients. **Query:** `?search=<name or external ref>`
+
+### GET `/api/patients/{patient_id}`
+Patient detail, including ICU stay history.
+
+### POST `/api/patients`
+Create a patient. **Body:** `{ "name", "external_ref?", "age?", "gender?" }`
+
+### PUT `/api/patients/{patient_id}`
+Update a patient.
+
+### POST `/api/patients/{patient_id}/stays`
+Create a new ICU stay for an existing patient. **Body:** `{ "source_record?" }`
+(if omitted, a unique case number `ICU-YYYYMMDD-XXXX` is generated).
+
+---
+
+## ICU Stays
+
+### GET `/api/stays`
+List ICU stays. **Query:** `?status=RUNNING|ENDED&limit=50&offset=0`
+
+### GET `/api/stays/{stay_id}`
+Stay detail.
+
+### POST `/api/stays`
+Create a patient + ICU stay together. **Body:** `{ "patient_name", "age?", "gender?", "source_record?" }`
+
+### POST `/api/stays/{stay_id}/vitals`
+Ingest one hour of vitals (published to Kafka `patient_vitals`).
+**Body:** `{ "hour": <int>, "record": { ...vital signs... } }`
+
+### POST `/api/stays/{stay_id}/stop`
+End an ICU stay (status → `ENDED`).
+
+### GET `/api/stays/{stay_id}/predictions`
+Hourly sepsis predictions for the stay.
+
+### GET `/api/stays/{stay_id}/alerts`
+Alerts for the stay.
 
 ---
 
 ## Alerts
 
 ### GET `/api/alerts`
-List alerts with filters.
-
-**Query:** `?status=NEW|ACK|DISMISSED&session_id=uuid&from=ISO8601&to=ISO8601&limit=50&offset=0`
+List alerts with filters. **Query:** `?status=NEW|ACK|DISMISSED&...`
 
 ### GET `/api/alerts/{alert_id}`
-Get alert detail with actions.
+Alert detail with actions.
 
 ### POST `/api/alerts/{alert_id}/ack`
-Acknowledge an alert.
-
-**Request Body:**
-```json
-{ "reason": "Confirmed PVC pattern", "note": "Will monitor closely" }
-```
+Acknowledge an alert. **Body:** `{ "reason?", "note?" }`
 
 ### POST `/api/alerts/{alert_id}/dismiss`
-Dismiss an alert.
-
-**Request Body:**
-```json
-{ "reason": "Artifact/noise", "note": "Motion artifact detected" }
-```
+Dismiss an alert. **Body:** `{ "reason?", "note?" }`
 
 ---
 
-## History
+## Analytics
 
-### GET `/api/sessions/{session_id}/predictions`
-Get prediction history for a session.
+### GET `/api/analytics/alerts_hourly`
+Alert counts per hour of day.
 
-**Query:** `?from=ISO8601&to=ISO8601&limit=1000`
-
-### GET `/api/sessions/{session_id}/alerts`
-Get alerts for a session.
+### GET `/api/analytics/summary`
+Aggregate statistics (total alerts, acknowledged, dismissed, etc.).
 
 ---
 
 ## Admin — Settings
 
 ### GET `/api/admin/settings`
-Get all system settings. Requires Admin role.
+Get system settings. Requires Admin role.
 
 ### PUT `/api/admin/settings`
-Update system settings. Requires Admin role.
-
-**Request Body:**
-```json
-{
-  "thr_A": 0.65,
-  "V_WINDOW": 10,
-  "V_THRESH": 5,
-  "COOLDOWN_V": 20,
-  "A_WINDOW": 30,
-  "A_THRESH": 4,
-  "COOLDOWN_A": 45,
-  "STREAM_CHUNK_SEC": 1.0,
-  "REALTIME_SPEED": 1.0
-}
-```
+Update system settings (sepsis risk threshold, sustained hours, cooldown, stream speed).
+Requires Admin role.
 
 ---
 
@@ -117,72 +120,64 @@ Update system settings. Requires Admin role.
 ### GET `/api/admin/users`
 List all users. Requires Admin role.
 
+### GET `/api/admin/users/roles`
+List available roles.
+
 ### POST `/api/admin/users`
-Create a new user. Requires Admin role.
+Create a user. Requires Admin role.
 
 ### PUT `/api/admin/users/{user_id}`
-Update user. Requires Admin role.
+Update a user. Requires Admin role. An admin cannot deactivate their own account.
 
 ### DELETE `/api/admin/users/{user_id}`
-Delete (deactivate) user. Requires Admin role.
+Delete a user. Requires Admin role. An admin cannot delete their own account.
 
 ---
 
-## Analytics
+## MLOps
 
-### GET `/api/analytics/alerts_hourly`
-Get alerts per hour.
+### GET `/api/mlops/experiments`
+Recent MLflow runs (parameters + metrics).
 
-**Query:** `?from=ISO8601&to=ISO8601&session_id=uuid`
+### GET `/api/mlops/registry`
+Versions of the `sepsis-xgb-earlywarning` model from the MLflow Model Registry.
 
-### GET `/api/analytics/summary`
-Get summary statistics.
+### GET `/api/mlops/pipeline/status`
+Status of the Airflow DAG `sepsis_daily_retrain`.
 
-**Query:** `?from=ISO8601&to=ISO8601`
+### GET `/api/mlops/dataset/stats`
+Dataset statistics (train/val/test row and patient counts).
 
-**Response:**
-```json
-{
-  "total_alerts": 42,
-  "ack_count": 30,
-  "dismiss_count": 8,
-  "new_count": 4,
-  "dismiss_rate": 0.19,
-  "avg_response_time_sec": 12.5
-}
-```
+### POST `/api/mlops/registry/{version}/promote`
+Promote a model version to Production. Requires Admin role.
+
+### POST `/api/mlops/registry/{version}/archive`
+Archive a model version. Requires Admin role.
+
+---
+
+## Health
+
+### GET `/api/health`
+Liveness check.
 
 ---
 
 ## WebSocket
 
-### WS `/ws/live?session_id={session_id}&token={jwt_token}`
+### WS `/ws/live?stay_id={stay_id}&token={jwt_token}`
 
-Server pushes 3 message types:
-
-**Waveform:**
-```json
-{
-  "type": "waveform",
-  "data": {
-    "ts_start": "ISO8601",
-    "fs": 360,
-    "lead": ["MLII", "V1"],
-    "samples": [[...], [...]]
-  }
-}
-```
+The server pushes real-time updates for the subscribed stay:
 
 **Prediction:**
 ```json
 {
   "type": "prediction",
   "data": {
-    "beat_ts_sec": 218.24,
-    "pred_class": "N",
-    "confidence": 0.95,
-    "pA": 0.02,
-    "probs": {"N": 0.95, "A": 0.02, "V": 0.03}
+    "stay_id": "uuid",
+    "hour": 34,
+    "risk_score": 0.89,
+    "risk_level": "HIGH"
   }
 }
 ```
@@ -193,10 +188,9 @@ Server pushes 3 message types:
   "type": "alert",
   "data": {
     "alert_id": "uuid",
-    "alert_type": "V",
+    "stay_id": "uuid",
     "status": "NEW",
-    "severity": 0.85,
-    "evidence": { "window_sec": 10, "count": 5, "threshold": 5 }
+    "severity": 0.85
   }
 }
 ```
