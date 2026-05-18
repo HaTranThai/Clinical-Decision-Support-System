@@ -92,7 +92,9 @@ def main() -> None:
 
         target_dir = REPO_ROOT / "services" / "inference-service" / "artifacts"
         target_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(args.checkpoint, target_dir / SERVING_MODEL_NAME)
+        serving_path = target_dir / SERVING_MODEL_NAME
+        serving_path.unlink(missing_ok=True)
+        shutil.copyfile(args.checkpoint, serving_path)
 
         manifest = {
             "model_name": model_name,
@@ -104,9 +106,9 @@ def main() -> None:
             "run_id": run_id,
             "metrics": metrics,
         }
-        (target_dir / "model_manifest.json").write_text(
-            json.dumps(manifest, indent=2), encoding="utf-8"
-        )
+        manifest_path = target_dir / "model_manifest.json"
+        manifest_path.unlink(missing_ok=True)
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         logger.info(f"PROMOTED v{mv.version} to Production "
                     f"(AUROC {challenger_auroc:.4f} > champion {champion_auroc:.4f})")
     else:

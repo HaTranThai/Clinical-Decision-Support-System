@@ -36,7 +36,8 @@ def main() -> None:
     target_dir = REPO_ROOT / "services" / "inference-service" / "artifacts"
     target_dir.mkdir(parents=True, exist_ok=True)
     target_path = target_dir / "sepsis_model.json"
-    shutil.copy2(args.checkpoint, target_path)
+    target_path.unlink(missing_ok=True)
+    shutil.copyfile(args.checkpoint, target_path)
     logger.info(f"Copied {args.checkpoint} -> {target_path}")
 
     manifest = {
@@ -47,7 +48,9 @@ def main() -> None:
         "metrics": metrics,
         "promoted_at": datetime.now(timezone.utc).isoformat(),
     }
-    (target_dir / "model_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    manifest_path = target_dir / "model_manifest.json"
+    manifest_path.unlink(missing_ok=True)
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     logger.info("Wrote model_manifest.json")
 
 
