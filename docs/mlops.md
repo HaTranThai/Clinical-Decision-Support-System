@@ -1,30 +1,31 @@
-# MLOps Workflow
+# Quy trình MLOps
 
-This project separates online serving from offline model operations. The same pipeline
-can be run manually (DVC) or on a schedule (Airflow).
+Dự án tách riêng phần phục vụ trực tuyến (online serving) và các thao tác mô hình offline.
+Cùng một pipeline có thể chạy thủ công (DVC) hoặc theo lịch (Airflow).
 
-## Flow
+## Luồng xử lý
 
 ```text
-PhysioNet/CinC 2019 .psv files
- -> prepare_data        (engineer features, patient-level train/val/test split)
- -> train               (XGBoost challenger, logged to MLflow)
- -> evaluate            (metrics on the holdout test set)
- -> compare_and_register (gate by min_auroc, register + promote in MLflow Model Registry)
+File .psv của PhysioNet/CinC 2019
+ -> prepare_data         (trích đặc trưng, chia train/val/test theo bệnh nhân)
+ -> train                (huấn luyện XGBoost challenger, log lên MLflow)
+ -> evaluate             (đánh giá chỉ số trên tập test giữ riêng)
+ -> compare_and_register (kiểm soát bằng min_auroc, register + promote trong MLflow Model Registry)
  -> services/inference-service/artifacts/sepsis_model.json
- -> realtime serving pipeline
+ -> pipeline phục vụ realtime
 ```
 
-## Data Split
+## Cách chia dữ liệu
 
-The split is **patient-level** (each `.psv` file goes entirely into one of train/val/test),
-stratified by septic flag, and deterministic (`random_seed` in `params.yaml`).
-Ratios default to 70 / 15 / 15. This prevents leakage between hours of the same patient.
+Việc chia dữ liệu thực hiện ở **mức bệnh nhân** (mỗi file `.psv` đi trọn vẹn vào một trong
+train/val/test), phân tầng (stratified) theo nhãn nhiễm khuẩn huyết, và có tính tất định
+(`random_seed` trong `params.yaml`). Tỷ lệ mặc định là 70 / 15 / 15. Cách này tránh rò rỉ dữ liệu
+giữa các giờ của cùng một bệnh nhân.
 
-`tools/organize_splits.py` mirrors the split into `data/splits/{train,val,test}/` as symlinks
-so demo records can be picked from the test set (model never trained on them).
+`tools/organize_splits.py` tạo bản sao (symlink) của các split vào `data/splits/{train,val,test}/`
+để khi demo có thể chọn bệnh nhân trong tập test (mô hình chưa từng học).
 
-## Local Setup
+## Cài đặt cục bộ
 
 ```bash
 cd /home/bbsw/DP/CNM-Final-Project
@@ -33,10 +34,10 @@ source .venv/bin/activate
 pip install -e mlops
 ```
 
-Place the PhysioNet/CinC 2019 dataset under `Data/sepsis-2019/training_setA` and
+Đặt bộ dữ liệu PhysioNet/CinC 2019 vào `Data/sepsis-2019/training_setA` và
 `Data/sepsis-2019/training_setB`.
 
-## Reproduce The Pipeline — DVC
+## Tái lập pipeline — bằng DVC
 
 ```bash
 docker compose up -d mlflow
@@ -44,47 +45,68 @@ export MLFLOW_TRACKING_URI=http://localhost:15000
 dvc repro
 ```
 
-`dvc.yaml` stages: `prepare_data → train → evaluate → compare_and_register`.
+Các stage trong `dvc.yaml`: `prepare_data → train → evaluate → compare_and_register`.
 
-## Reproduce The Pipeline — Airflow
+## Giới thiệu Apache Airflow
 
-The DAG `sepsis_daily_retrain` runs the same stages daily at 02:00. Each stage runs
-as an isolated subprocess (`python -m sepsis_mlops.<module>`).
+Apache Airflow là một nền tảng mã nguồn mở dùng để **lập lịch và điều phối luồng công việc**
+(workflow orchestration). Trong Airflow, một luồng công việc được mô tả bằng một **DAG**
+(Directed Acyclic Graph — đồ thị có hướng không chu trình): mỗi đỉnh là một **task** (công
+việc), mỗi cạnh là một **quan hệ phụ thuộc** quy định thứ tự chạy. Airflow tự động chạy các
+task theo đúng thứ tự, theo lịch định sẵn, đồng thời theo dõi trạng thái, ghi log và tự thử
+lại (retry) khi task lỗi.
 
-- Airflow UI: http://localhost:18080 (admin / admin123)
-- Trigger manually: `docker compose exec airflow-scheduler airflow dags trigger sepsis_daily_retrain`
+Các thành phần chính của Airflow gồm: **Scheduler** (bộ lập lịch — quyết định task nào chạy
+khi nào), **Webserver** (giao diện web để theo dõi và điều khiển DAG), và **Metadata
+Database** (lưu trạng thái các lần chạy). Trong đồ án, ba thành phần này tương ứng với các
+container `airflow-scheduler`, `airflow-webserver` và được lưu trạng thái trong PostgreSQL.
 
-## Model Registry & Promotion
+**Vì sao đồ án dùng Airflow:** mô hình học máy cần được **tái huấn luyện định kỳ** để cập
+nhật theo dữ liệu mới. Thay vì chạy thủ công, Airflow cho phép **tự động hóa** toàn bộ
+pipeline (`prepare_data → train → evaluate → compare_and_register`) theo lịch hằng ngày,
+bảo đảm các bước chạy đúng thứ tự, có thể theo dõi và xử lý lỗi — đây chính là tinh thần
+"tự động hóa" của MLOps. Airflow đóng vai trò bổ sung cho DVC: DVC dùng để chạy thủ công và
+bảo đảm tính tái lập, còn Airflow dùng để tự động hóa theo lịch.
 
-- Registered model name: `sepsis-xgb-earlywarning`
-- `compare_and_register` registers the trained challenger as a new version
-- Promotion to Production requires `auroc >= min_auroc` (params.yaml) and a better AUROC than the
-  current champion; otherwise the version is archived
-- On promotion, the serving model is copied to
-  `services/inference-service/artifacts/sepsis_model.json` with a `model_manifest.json`
+## Tái lập pipeline — bằng Airflow
 
-## Serving With A Tracked Artifact
+DAG `sepsis_daily_retrain` chạy cùng các bước trên hằng ngày lúc 02:00. Mỗi bước chạy như một
+tiến trình con độc lập (`python -m sepsis_mlops.<module>`).
 
-The inference service serves the local checkpoint by default:
+- Giao diện Airflow: http://localhost:18080 (admin / admin123)
+- Kích hoạt thủ công: `docker compose exec airflow-scheduler airflow dags trigger sepsis_daily_retrain`
+
+## Model Registry & việc promote
+
+- Tên model đã đăng ký: `sepsis-xgb-earlywarning`
+- `compare_and_register` đăng ký challenger vừa huấn luyện thành một version mới
+- Để promote lên Production: AUROC phải `>= min_auroc` (trong params.yaml) và cao hơn champion
+  hiện tại; nếu không đạt thì version bị archive
+- Khi promote, model phục vụ được copy sang `services/inference-service/artifacts/sepsis_model.json`
+  kèm file `model_manifest.json`
+
+## Phục vụ bằng artifact theo dõi trên MLflow
+
+Mặc định inference service phục vụ checkpoint cục bộ:
 
 ```bash
 MODEL_CHECKPOINT=artifacts/sepsis_model.json
 ```
 
-It also supports MLflow artifact URIs (`runs:/`, `models:/`, `mlflow-artifacts:/`):
+Cũng hỗ trợ URI artifact của MLflow (`runs:/`, `models:/`, `mlflow-artifacts:/`):
 
 ```bash
 MODEL_URI=runs:/<run_id>/model
 MLFLOW_TRACKING_URI=http://mlflow:5000
 ```
 
-When `MODEL_URI` is set, it takes precedence over `MODEL_CHECKPOINT`.
+Khi đặt `MODEL_URI`, nó được ưu tiên hơn `MODEL_CHECKPOINT`.
 
-## What Is Versioned
+## Những gì được quản lý phiên bản
 
-- `params.yaml`: reproducible training configuration
-- `dvc.yaml`: data, training, evaluation, and registration DAG
-- MLflow: parameters, metrics, checkpoints, and the model registry
-- `services/inference-service/artifacts/model_manifest.json`: latest promotion metadata
+- `params.yaml`: cấu hình huấn luyện đảm bảo tái lập
+- `dvc.yaml`: DAG dữ liệu, huấn luyện, đánh giá, đăng ký
+- MLflow: tham số, chỉ số, checkpoint và model registry
+- `services/inference-service/artifacts/model_manifest.json`: metadata của lần promote gần nhất
 
-Raw `.psv` files, processed parquet, checkpoints, and MLflow run directories are ignored by Git.
+File `.psv` thô, parquet đã xử lý, checkpoint và thư mục run của MLflow đều bị Git bỏ qua (gitignore).

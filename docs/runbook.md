@@ -1,25 +1,25 @@
-# Runbook — Sepsis Early-Warning CDSS
+# Sổ tay vận hành — Hệ thống Cảnh báo sớm Nhiễm khuẩn huyết
 
-## Prerequisites
+## Điều kiện cần
 
-- Docker & Docker Compose installed
-- PhysioNet/CinC Challenge 2019 dataset under `Data/sepsis-2019/training_setA` and `training_setB`
-- A serving model `services/inference-service/artifacts/sepsis_model.json`, or run the MLOps
-  pipeline to create one
+- Đã cài Docker & Docker Compose
+- Bộ dữ liệu PhysioNet/CinC Challenge 2019 đặt tại `Data/sepsis-2019/training_setA` và `training_setB`
+- Có file model phục vụ `services/inference-service/artifacts/sepsis_model.json`, hoặc chạy
+  pipeline MLOps để tạo ra
 
-## Setup
+## Cài đặt
 
-### 1. Configure
+### 1. Cấu hình
 
 ```bash
 cd CNM-Final-Project
 cp .env.example .env
-# Edit .env if needed (default values work for local dev)
+# Sửa .env nếu cần (giá trị mặc định đã chạy được cho môi trường local)
 ```
 
-### 2. Place Data Files
+### 2. Đặt dữ liệu
 
-Copy the PhysioNet/CinC 2019 dataset so the layout is:
+Copy bộ dữ liệu PhysioNet/CinC 2019 theo cấu trúc:
 
 ```text
 Data/sepsis-2019/training_setA/p000001.psv
@@ -27,36 +27,36 @@ Data/sepsis-2019/training_setB/p100001.psv
 ...
 ```
 
-To train and promote a model locally, see `docs/mlops.md`.
+Để huấn luyện và promote mô hình cục bộ, xem `docs/mlops.md`.
 
-### 3. Build & Start
+### 3. Build & khởi động
 
 ```bash
 docker compose up -d
 ```
 
-Core services: `postgres`, `kafka`, `mlflow`, `backend`, `frontend`,
+Các service lõi: `postgres`, `kafka`, `mlflow`, `backend`, `frontend`,
 `preprocess-buffer`, `inference-service`, `alert-engine`.
-MLOps services: `airflow-init` (one-shot), `airflow-webserver`, `airflow-scheduler`.
-`replay-producer` is optional — start it only if you want auto-streamed demo patients.
+Service MLOps: `airflow-init` (chạy một lần), `airflow-webserver`, `airflow-scheduler`.
+`replay-producer` là tùy chọn — chỉ bật khi muốn tự động phát dữ liệu bệnh nhân demo.
 
-### 4. Endpoints
+### 4. Các địa chỉ truy cập
 
-| UI | URL | Credentials |
-|----|-----|-------------|
-| Web app | http://localhost:13000 | admin / admin123 |
+| Giao diện | URL | Tài khoản |
+|-----------|-----|-----------|
+| Ứng dụng web | http://localhost:13000 | admin / admin123 |
 | MLflow | http://localhost:15000 | — |
 | Airflow | http://localhost:18080 | admin / admin123 |
 | Backend API | http://localhost:18800 | JWT |
 
-## Demo Flow
+## Luồng demo
 
-### Step 1: Login
-Open http://localhost:13000 → log in with `admin` / `admin123`.
+### Bước 1: Đăng nhập
+Mở http://localhost:13000 → đăng nhập `admin` / `admin123`.
 
-### Step 2: Stream a patient
+### Bước 2: Bơm dữ liệu một bệnh nhân
 
-Use a test-set record (the model never trained on it — honest demo):
+Dùng bệnh nhân trong tập test (mô hình chưa từng học — demo trung thực):
 
 ```bash
 python tools/push_patient.py \
@@ -65,53 +65,53 @@ python tools/push_patient.py \
   --interval 5 --stop
 ```
 
-The script logs in, creates a patient + ICU stay, and pushes hourly vitals.
+Script sẽ đăng nhập, tạo bệnh nhân + ca ICU, rồi bơm chỉ số sinh tồn theo từng giờ.
 
-### Step 3: Watch real-time
-- **Triage Board** (`/overview`) — risk per stay, refreshes every 5s
-- **Patient Monitor** (`/live`) — risk gauge, sepsis risk trajectory, vital signs, alerts
-- **ICU Stays** (`/stays`) — stay list; **Stop** ends a stay
-- **Sepsis Alerts** (`/alerts`) — alerts raised when risk stays above threshold
-- **Analytics** (`/analytics`) — aggregate statistics
+### Bước 3: Theo dõi realtime
+- **Triage Board** (`/overview`) — nguy cơ theo từng ca, làm mới mỗi 5 giây
+- **Patient Monitor** (`/live`) — đồng hồ nguy cơ, đường diễn tiến nguy cơ, chỉ số sinh tồn, cảnh báo
+- **ICU Stays** (`/stays`) — danh sách ca; nút **Stop** để kết thúc một ca
+- **Sepsis Alerts** (`/alerts`) — cảnh báo phát ra khi nguy cơ duy trì trên ngưỡng
+- **Analytics** (`/analytics`) — thống kê tổng hợp
 
-### Step 4: Patient management
-**Patients** → open a patient → **+ New ICU Stay** to add another monitoring session.
+### Bước 4: Quản lý bệnh nhân
+**Patients** → mở một bệnh nhân → **+ New ICU Stay** để thêm phiên theo dõi mới.
 
-### Step 5: MLOps
-- **MLOps → Dashboard / Experiments / Model Registry** in the web app
-- MLflow UI: http://localhost:15000
-- Airflow UI: http://localhost:18080 — DAG `sepsis_daily_retrain`
+### Bước 5: MLOps
+- **MLOps → Dashboard / Experiments / Model Registry** trong ứng dụng web
+- Giao diện MLflow: http://localhost:15000
+- Giao diện Airflow: http://localhost:18080 — DAG `sepsis_daily_retrain`
 
-## Troubleshooting
+## Xử lý sự cố
 
-### Kafka not ready
-Services may restart a few times while Kafka initializes. This is normal.
-The `Unknown topic or partition` log on first start is harmless — topics are auto-created
-on first publish.
+### Kafka chưa sẵn sàng
+Các service có thể khởi động lại vài lần trong lúc Kafka khởi tạo. Đây là hiện tượng bình thường.
+Log `Unknown topic or partition` ở lần chạy đầu là vô hại — topic được tạo tự động khi có message
+đầu tiên.
 
-### No predictions / no risk on the monitor
-- Check the serving model exists: `services/inference-service/artifacts/sepsis_model.json`
-- Check inference-service logs: `docker compose logs inference-service`
+### Không có dự đoán / không thấy nguy cơ trên màn hình theo dõi
+- Kiểm tra file model phục vụ tồn tại: `services/inference-service/artifacts/sepsis_model.json`
+- Xem log inference-service: `docker compose logs inference-service`
 
-### Airflow task logs show 403
-Webserver and scheduler must share `AIRFLOW__WEBSERVER__SECRET_KEY` (set in docker-compose).
+### Log task Airflow báo lỗi 403
+Webserver và scheduler phải dùng chung `AIRFLOW__WEBSERVER__SECRET_KEY` (đã đặt trong docker-compose).
 
-### Out of memory during training
-Training is memory-heavy. Free RAM by stopping non-essential containers, or reduce
-`n_workers` in `prepare_data`.
+### Hết RAM khi huấn luyện
+Huấn luyện ngốn nhiều RAM. Giải phóng RAM bằng cách tạm dừng các container không cần thiết, hoặc
+giảm `n_workers` trong `prepare_data`.
 
-### Database issues
-Reset everything (drops DB, MLflow, and Airflow volumes):
+### Sự cố cơ sở dữ liệu
+Khởi tạo lại toàn bộ (xóa DB, MLflow và volume Airflow):
 ```bash
 docker compose down -v
 docker compose up -d
 ```
 
-## Stopping
+## Dừng hệ thống
 
 ```bash
-docker compose stop                       # stop containers
-docker compose stop airflow-webserver airflow-scheduler   # stop only Airflow (save RAM)
-docker compose down                       # stop & remove containers
-docker compose down -v                    # also remove volumes (reset all data)
+docker compose stop                                       # dừng container
+docker compose stop airflow-webserver airflow-scheduler   # chỉ dừng Airflow (tiết kiệm RAM)
+docker compose down                                       # dừng & xóa container
+docker compose down -v                                    # xóa cả volume (reset toàn bộ dữ liệu)
 ```

@@ -1,165 +1,165 @@
-# API Reference — Sepsis Early-Warning CDSS
+# Tài liệu API — Hệ thống Cảnh báo sớm Nhiễm khuẩn huyết
 
-Base URL: `http://localhost:18800`
+URL gốc: `http://localhost:18800`
 
-All endpoints except `/api/auth/login` and `/api/health` require
-`Authorization: Bearer <token>`. Interactive docs: `http://localhost:18800/docs`.
+Mọi endpoint trừ `/api/auth/login` và `/api/health` đều yêu cầu header
+`Authorization: Bearer <token>`. Tài liệu tương tác: `http://localhost:18800/docs`.
 
-## Authentication
+## Xác thực
 
 ### POST `/api/auth/login`
-Login and receive a JWT token.
+Đăng nhập và nhận JWT token.
 
-**Request Body:**
+**Body:**
 ```json
 { "username": "admin", "password": "admin123" }
 ```
 
-**Response:**
+**Phản hồi:**
 ```json
 { "access_token": "eyJ...", "token_type": "bearer" }
 ```
 
 ### GET `/api/auth/me`
-Get the current user profile.
+Lấy thông tin người dùng hiện tại.
 
 ---
 
-## Overview
+## Tổng quan
 
 ### GET `/api/overview`
-Triage board — one entry per active ICU stay with the latest sepsis risk.
+Bảng phân loại (triage board) — mỗi mục là một ca ICU đang hoạt động kèm nguy cơ mới nhất.
 
 ---
 
-## Patients
+## Bệnh nhân
 
 ### GET `/api/patients`
-List patients. **Query:** `?search=<name or external ref>`
+Danh sách bệnh nhân. **Query:** `?search=<tên hoặc mã ngoài>`
 
 ### GET `/api/patients/{patient_id}`
-Patient detail, including ICU stay history.
+Chi tiết bệnh nhân, gồm lịch sử các ca ICU.
 
 ### POST `/api/patients`
-Create a patient. **Body:** `{ "name", "external_ref?", "age?", "gender?" }`
+Tạo bệnh nhân. **Body:** `{ "name", "external_ref?", "age?", "gender?" }`
 
 ### PUT `/api/patients/{patient_id}`
-Update a patient.
+Cập nhật bệnh nhân.
 
 ### POST `/api/patients/{patient_id}/stays`
-Create a new ICU stay for an existing patient. **Body:** `{ "source_record?" }`
-(if omitted, a unique case number `ICU-YYYYMMDD-XXXX` is generated).
+Tạo ca ICU mới cho một bệnh nhân đã có. **Body:** `{ "source_record?" }`
+(nếu bỏ trống, hệ thống tự sinh mã ca duy nhất `ICU-YYYYMMDD-XXXX`).
 
 ---
 
-## ICU Stays
+## Ca ICU
 
 ### GET `/api/stays`
-List ICU stays. **Query:** `?status=RUNNING|ENDED&limit=50&offset=0`
+Danh sách ca ICU. **Query:** `?status=RUNNING|ENDED&limit=50&offset=0`
 
 ### GET `/api/stays/{stay_id}`
-Stay detail.
+Chi tiết một ca.
 
 ### POST `/api/stays`
-Create a patient + ICU stay together. **Body:** `{ "patient_name", "age?", "gender?", "source_record?" }`
+Tạo bệnh nhân + ca ICU cùng lúc. **Body:** `{ "patient_name", "age?", "gender?", "source_record?" }`
 
 ### POST `/api/stays/{stay_id}/vitals`
-Ingest one hour of vitals (published to Kafka `patient_vitals`).
-**Body:** `{ "hour": <int>, "record": { ...vital signs... } }`
+Nạp một giờ chỉ số sinh tồn (đẩy vào Kafka `patient_vitals`).
+**Body:** `{ "hour": <int>, "record": { ...chỉ số sinh tồn... } }`
 
 ### POST `/api/stays/{stay_id}/stop`
-End an ICU stay (status → `ENDED`).
+Kết thúc một ca ICU (trạng thái → `ENDED`).
 
 ### GET `/api/stays/{stay_id}/predictions`
-Hourly sepsis predictions for the stay.
+Lịch sử dự đoán nguy cơ theo giờ của ca.
 
 ### GET `/api/stays/{stay_id}/alerts`
-Alerts for the stay.
+Các cảnh báo của ca.
 
 ---
 
-## Alerts
+## Cảnh báo
 
 ### GET `/api/alerts`
-List alerts with filters. **Query:** `?status=NEW|ACK|DISMISSED&...`
+Danh sách cảnh báo kèm bộ lọc. **Query:** `?status=NEW|ACK|DISMISSED&...`
 
 ### GET `/api/alerts/{alert_id}`
-Alert detail with actions.
+Chi tiết cảnh báo kèm các hành động đã thực hiện.
 
 ### POST `/api/alerts/{alert_id}/ack`
-Acknowledge an alert. **Body:** `{ "reason?", "note?" }`
+Xác nhận (acknowledge) cảnh báo. **Body:** `{ "reason?", "note?" }`
 
 ### POST `/api/alerts/{alert_id}/dismiss`
-Dismiss an alert. **Body:** `{ "reason?", "note?" }`
+Bỏ qua (dismiss) cảnh báo. **Body:** `{ "reason?", "note?" }`
 
 ---
 
-## Analytics
+## Phân tích
 
 ### GET `/api/analytics/alerts_hourly`
-Alert counts per hour of day.
+Số lượng cảnh báo theo từng giờ trong ngày.
 
 ### GET `/api/analytics/summary`
-Aggregate statistics (total alerts, acknowledged, dismissed, etc.).
+Thống kê tổng hợp (tổng cảnh báo, đã xác nhận, đã bỏ qua, ...).
 
 ---
 
-## Admin — Settings
+## Quản trị — Cấu hình
 
 ### GET `/api/admin/settings`
-Get system settings. Requires Admin role.
+Lấy cấu hình hệ thống. Yêu cầu vai trò Admin.
 
 ### PUT `/api/admin/settings`
-Update system settings (sepsis risk threshold, sustained hours, cooldown, stream speed).
-Requires Admin role.
+Cập nhật cấu hình hệ thống (ngưỡng nguy cơ sepsis, số giờ duy trì, cooldown, tốc độ phát).
+Yêu cầu vai trò Admin.
 
 ---
 
-## Admin — Users
+## Quản trị — Người dùng
 
 ### GET `/api/admin/users`
-List all users. Requires Admin role.
+Danh sách tất cả người dùng. Yêu cầu vai trò Admin.
 
 ### GET `/api/admin/users/roles`
-List available roles.
+Danh sách các vai trò.
 
 ### POST `/api/admin/users`
-Create a user. Requires Admin role.
+Tạo người dùng. Yêu cầu vai trò Admin.
 
 ### PUT `/api/admin/users/{user_id}`
-Update a user. Requires Admin role. An admin cannot deactivate their own account.
+Cập nhật người dùng. Yêu cầu vai trò Admin. Admin không thể tự vô hiệu hóa tài khoản của mình.
 
 ### DELETE `/api/admin/users/{user_id}`
-Delete a user. Requires Admin role. An admin cannot delete their own account.
+Xóa người dùng. Yêu cầu vai trò Admin. Admin không thể xóa tài khoản của chính mình.
 
 ---
 
 ## MLOps
 
 ### GET `/api/mlops/experiments`
-Recent MLflow runs (parameters + metrics).
+Các run gần đây trên MLflow (tham số + chỉ số).
 
 ### GET `/api/mlops/registry`
-Versions of the `sepsis-xgb-earlywarning` model from the MLflow Model Registry.
+Các version của model `sepsis-xgb-earlywarning` trong MLflow Model Registry.
 
 ### GET `/api/mlops/pipeline/status`
-Status of the Airflow DAG `sepsis_daily_retrain`.
+Trạng thái DAG Airflow `sepsis_daily_retrain`.
 
 ### GET `/api/mlops/dataset/stats`
-Dataset statistics (train/val/test row and patient counts).
+Thống kê bộ dữ liệu (số dòng và số bệnh nhân của train/val/test).
 
 ### POST `/api/mlops/registry/{version}/promote`
-Promote a model version to Production. Requires Admin role.
+Promote một version mô hình lên Production. Yêu cầu vai trò Admin.
 
 ### POST `/api/mlops/registry/{version}/archive`
-Archive a model version. Requires Admin role.
+Archive một version mô hình. Yêu cầu vai trò Admin.
 
 ---
 
-## Health
+## Kiểm tra sức khỏe
 
 ### GET `/api/health`
-Liveness check.
+Kiểm tra hệ thống còn sống (liveness).
 
 ---
 
@@ -167,9 +167,9 @@ Liveness check.
 
 ### WS `/ws/live?stay_id={stay_id}&token={jwt_token}`
 
-The server pushes real-time updates for the subscribed stay:
+Server đẩy cập nhật realtime cho ca đang theo dõi:
 
-**Prediction:**
+**Dự đoán (prediction):**
 ```json
 {
   "type": "prediction",
@@ -182,7 +182,7 @@ The server pushes real-time updates for the subscribed stay:
 }
 ```
 
-**Alert:**
+**Cảnh báo (alert):**
 ```json
 {
   "type": "alert",

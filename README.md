@@ -1,292 +1,316 @@
-# Hệ thống AI Cảnh báo sớm Nhiễm khuẩn huyết (Sepsis Early-Warning CDSS)
+# 🏥 Sepsis Early-Warning CDSS
 
-> Tài liệu này viết cho người **chưa biết gì** về dự án. Đọc từ trên xuống là hiểu.
+### Hệ thống AI thời gian thực cảnh báo sớm Nhiễm khuẩn huyết trong ICU
 
----
+Hệ thống hỗ trợ quyết định lâm sàng (Clinical Decision Support System) ứng dụng học máy để
+**dự đoán nguy cơ nhiễm khuẩn huyết (sepsis)** cho bệnh nhân hồi sức tích cực, cảnh báo sớm
+cho nhân viên y tế **trước khi** bệnh biểu hiện rõ trên lâm sàng.
 
-## 1. Hệ thống này là gì? Giải quyết vấn đề gì?
-
-**Nhiễm khuẩn huyết (sepsis)** là tình trạng cơ thể phản ứng quá mức với nhiễm trùng, có thể gây suy đa tạng và tử vong. Trong ICU (khoa hồi sức), nếu phát hiện **sớm vài giờ** thì bác sĩ kịp can thiệp và cứu được bệnh nhân; phát hiện muộn thì nguy hiểm.
-
-Hệ thống này là một **"trợ lý AI"** chạy nền trong ICU:
-
-- Mỗi **giờ**, nó nhận các chỉ số của bệnh nhân (mạch, huyết áp, nhiệt độ, kết quả xét nghiệm máu...).
-- Một mô hình AI tính ra **điểm nguy cơ sepsis** từ 0 đến 1 (càng cao càng nguy hiểm).
-- Nếu nguy cơ **cao và kéo dài**, hệ thống **bật cảnh báo** cho bác sĩ.
-- Tất cả hiển thị trên một **trang web theo dõi thời gian thực**.
-
-Đây gọi là **CDSS** — *Clinical Decision Support System* — hệ thống hỗ trợ bác sĩ ra quyết định.
-
-Dữ liệu dùng để huấn luyện AI lấy từ cuộc thi **PhysioNet/CinC Challenge 2019** (~40.000 bệnh nhân ICU thật).
+Dự án xây dựng theo **kiến trúc microservices**, xử lý dữ liệu **streaming thời gian thực**
+qua Apache Kafka, kèm quy trình **MLOps** đầy đủ (DVC · Airflow · MLflow).
 
 ---
 
-## 2. Hệ thống hoạt động thế nào? (kể bằng lời)
+## 📑 Mục lục
 
-Tưởng tượng một bệnh nhân nằm ICU. Mỗi giờ:
+1. [Tổng quan](#1-tổng-quan)
+2. [Giao diện hệ thống](#2-giao-diện-hệ-thống)
+3. [Kiến trúc](#3-kiến-trúc)
+4. [Công nghệ sử dụng](#4-công-nghệ-sử-dụng)
+5. [Cấu trúc thư mục](#5-cấu-trúc-thư-mục)
+6. [Yêu cầu hệ thống](#6-yêu-cầu-hệ-thống)
+7. [Cài đặt & Chạy](#7-cài-đặt--chạy)
+8. [Hướng dẫn sử dụng & Demo](#8-hướng-dẫn-sử-dụng--demo)
+9. [Quy trình MLOps](#9-quy-trình-mlops)
+10. [Cổng dịch vụ](#10-cổng-dịch-vụ)
+11. [Tài liệu](#11-tài-liệu)
 
-1. **Thiết bị theo dõi** gửi chỉ số của bệnh nhân vào hệ thống.
-2. Hệ thống **tính toán đặc trưng** — biến chỉ số thô thành dạng AI hiểu được (ví dụ: nhịp tim trung bình 6 giờ qua, bao lâu rồi chưa xét nghiệm máu...).
-3. **Mô hình AI** đọc các đặc trưng đó → cho ra **điểm nguy cơ sepsis**.
-4. **Bộ luật cảnh báo** xem: nếu nguy cơ ≥ 0.6 suốt 3 giờ liền → **phát cảnh báo**.
-5. **Trang web** hiển thị mọi thứ ngay lập tức cho bác sĩ.
+---
 
-Sơ đồ:
+## 1. Tổng quan
+
+**Nhiễm khuẩn huyết (sepsis)** là phản ứng mất kiểm soát của cơ thể trước nhiễm trùng, gây
+suy đa cơ quan và là một trong những nguyên nhân tử vong hàng đầu tại ICU. Mỗi giờ chậm trễ
+trong chẩn đoán làm tăng đáng kể tỷ lệ tử vong — do đó **phát hiện sớm** có ý nghĩa sống còn.
+
+Hệ thống hoạt động như một "trợ lý AI" chạy nền trong ICU:
+
+1. Mỗi **giờ**, nhận chỉ số sinh tồn của bệnh nhân (mạch, huyết áp, nhiệt độ, xét nghiệm…).
+2. Trích xuất **114 đặc trưng** chuỗi thời gian.
+3. Mô hình **XGBoost** tính **điểm nguy cơ sepsis** (0–1) và mức nguy cơ (LOW/MEDIUM/HIGH).
+4. **Bộ luật cảnh báo** phát cảnh báo khi nguy cơ ≥ 0.6 liên tục 3 giờ (cooldown 12 giờ).
+5. **Giao diện web** hiển thị nguy cơ và cảnh báo theo thời gian thực cho bác sĩ.
+
+- **Dữ liệu:** PhysioNet/CinC Challenge 2019 (~40.336 bệnh nhân ICU).
+- **Hiệu năng mô hình:** AUROC ≈ 0.847 trên tập kiểm thử giữ riêng theo bệnh nhân.
+
+### Tính năng chính
+
+- 🩺 **Theo dõi thời gian thực** — bảng phân loại (triage), đồng hồ nguy cơ, đường diễn tiến.
+- 🔔 **Cảnh báo sớm sepsis** — luật cửa sổ trượt + cooldown chống quá tải cảnh báo.
+- 👥 **Quản lý bệnh nhân & ca ICU** — tạo, theo dõi, kết thúc ca giám sát.
+- 📊 **Phân tích & thống kê** — biểu đồ cảnh báo, tổng quan ICU.
+- 🤖 **MLOps** — huấn luyện tái lập (DVC), tự động hóa (Airflow), quản lý mô hình (MLflow).
+- 🔐 **Phân quyền** — xác thực JWT, vai trò Clinician/Admin.
+
+---
+
+## 2. Giao diện hệ thống
+
+| | |
+|---|---|
+| **Bảng phân loại (Triage Board)** | **Màn hình theo dõi bệnh nhân** |
+| ![Triage Board](docs/picture/1-9.png) | ![Patient Monitor](docs/picture/1-10.png) |
+| **Danh sách cảnh báo Sepsis** | **Bảng điều khiển MLOps** |
+| ![Sepsis Alerts](docs/picture/1-11.png) | ![MLOps Dashboard](docs/picture/2-5.png) |
+
+---
+
+## 3. Kiến trúc
+
+Hệ thống gồm hai luồng: **luồng phục vụ trực tuyến (online serving)** xử lý dữ liệu bệnh nhân
+theo thời gian thực, và **luồng MLOps (offline)** huấn luyện — quản lý mô hình.
+
+![Kiến trúc hệ thống](docs/picture/architecture.png)
+
+### Luồng dữ liệu thời gian thực
 
 ```
-Thiết bị / dữ liệu bệnh nhân
-        │  (chỉ số từng giờ)
-        ▼
-   Tính đặc trưng  ──►  Mô hình AI  ──►  Điểm nguy cơ  ──►  Luật cảnh báo
-                                                                  │
-                                                                  ▼
-                                              Trang web theo dõi (realtime)
+Nguồn dữ liệu → patient_vitals → Preprocess Buffer → patient_features
+   → Inference Service → sepsis_prediction → Alert Engine → sepsis_alert
+   → Backend (lưu DB + đẩy WebSocket) → Frontend
 ```
 
-Các thành phần **trao đổi dữ liệu với nhau qua Kafka** (xem mục Thuật ngữ).
+Mọi service giao tiếp **bất đồng bộ qua Apache Kafka** với 4 topic:
+`patient_vitals` · `patient_features` · `sepsis_prediction` · `sepsis_alert`.
+
+### Các microservice
+
+| Service | Vai trò |
+|---------|---------|
+| **replay-producer** | Phát lại dữ liệu `.psv` mô phỏng thiết bị theo dõi ICU |
+| **preprocess-buffer-service** | Đệm lịch sử theo ca, trích xuất 114 đặc trưng |
+| **inference-service** | Nạp mô hình XGBoost, tính điểm nguy cơ sepsis |
+| **alert-engine-service** | Áp luật cảnh báo, sinh cảnh báo sepsis |
+| **backend** | FastAPI: REST API, WebSocket, Kafka consumer, ORM |
+| **frontend** | Giao diện web React |
+| **kafka / postgres** | Hàng đợi tin nhắn / Cơ sở dữ liệu |
+| **mlflow / airflow** | Theo dõi thí nghiệm & registry / Tự động tái huấn luyện |
+
+### Sơ đồ triển khai
+
+![Triển khai Docker Compose](docs/picture/2-1.png)
 
 ---
 
-## 3. Các thành phần (mỗi cái là gì, làm gì)
+## 4. Công nghệ sử dụng
 
-Hệ thống gồm nhiều chương trình nhỏ ("service"), mỗi cái chạy trong một **container Docker** riêng:
-
-| Thành phần | Làm gì | Ví dụ dễ hiểu |
-|------------|--------|----------------|
-| **replay-producer** | Mô phỏng thiết bị theo dõi — đọc hồ sơ bệnh nhân, "phát" lại từng giờ | Như cái máy đo đeo trên người bệnh nhân |
-| **preprocess-buffer** | Nhận chỉ số thô, tính ra 114 đặc trưng cho AI | Người thư ký tổng hợp số liệu |
-| **inference-service** | Chạy mô hình AI để cho ra điểm nguy cơ | Bộ não chẩn đoán |
-| **alert-engine** | Xem điểm nguy cơ, quyết định khi nào cần báo động | Chuông báo động |
-| **backend** | Lưu dữ liệu, cung cấp API, đẩy dữ liệu lên web | Trung tâm điều phối |
-| **frontend** | Trang web bác sĩ nhìn vào | Màn hình theo dõi |
-| **Kafka** | "Đường ống" để các thành phần gửi dữ liệu cho nhau | Hệ thống băng chuyền |
-| **PostgreSQL** | Cơ sở dữ liệu — lưu bệnh nhân, dự đoán, cảnh báo | Tủ hồ sơ |
-| **MLflow** | Quản lý các phiên bản mô hình AI | Kho lưu model |
-| **Airflow** | Tự động huấn luyện lại AI mỗi ngày | Lịch hẹn tự động |
+| Tầng | Công nghệ |
+|------|-----------|
+| **Frontend** | React 18 · TypeScript · Vite · Ant Design · ECharts · TanStack Query · Zustand |
+| **Backend** | FastAPI · SQLAlchemy 2.0 (async) · Pydantic v2 · JWT · WebSocket |
+| **Streaming** | Python 3.11 · Apache Kafka · confluent-kafka |
+| **Machine Learning** | XGBoost · pandas · NumPy · scikit-learn |
+| **MLOps** | DVC · MLflow · Apache Airflow |
+| **Cơ sở dữ liệu** | PostgreSQL 15 |
+| **Hạ tầng** | Docker · Docker Compose |
 
 ---
 
-## 4. Cài đặt và chạy
+## 5. Cấu trúc thư mục
 
-### 4.1. Cần có sẵn
-- **Docker** và **Docker Compose** (đã cài trên máy).
-- **Dữ liệu** PhysioNet 2019. Nếu chưa có, tải bằng:
+```
+CNM-Final-Project/
+├── airflow/                  DAG sepsis_daily_retrain + Dockerfile
+│   └── dags/
+├── backend/                  Backend FastAPI
+│   └── app/{api,core,db,schemas,services}
+├── frontend/                 Giao diện web React + TypeScript
+│   └── src/{pages,components,api,stores,types}
+├── services/                 Các microservice streaming
+│   ├── replay-producer/
+│   ├── preprocess-buffer-service/
+│   ├── inference-service/
+│   ├── alert-engine-service/
+│   └── common/               Code dùng chung (kafka, config, schemas)
+├── mlops/                    Gói sepsis_mlops (pipeline học máy)
+│   └── src/sepsis_mlops/
+├── infra/                    Script khởi tạo Kafka, PostgreSQL
+├── tools/                    push_patient.py, organize_splits.py
+├── docs/                     Tài liệu dự án + báo cáo + hình ảnh
+├── Data/sepsis-2019/         Dữ liệu PhysioNet (gitignore)
+├── docker-compose.yml        Định nghĩa toàn bộ hạ tầng
+├── params.yaml               Tham số pipeline học máy
+├── dvc.yaml                  Định nghĩa pipeline DVC
+└── download_sepsis.py        Script tải dữ liệu PhysioNet
+```
+
+---
+
+## 6. Yêu cầu hệ thống
+
+- **Docker** và **Docker Compose** đã cài đặt.
+- **RAM** khuyến nghị ≥ 8 GB (chạy đầy đủ ~11 container).
+- **Dữ liệu** PhysioNet/CinC 2019 — nếu chưa có, tải bằng:
   ```bash
   python download_sepsis.py
   ```
-  Lệnh này tải ~40.000 file vào thư mục `Data/sepsis-2019/`.
+  Lệnh này tải ~40.000 file `.psv` vào `Data/sepsis-2019/`.
 
-### 4.2. Khởi động hệ thống
+---
+
+## 7. Cài đặt & Chạy
+
+### 7.1. Cấu hình
 
 ```bash
-# Vào thư mục dự án
 cd CNM-Final-Project
-
-# Tạo file cấu hình
-cp .env.example .env
-
-# Bật phần lõi (theo dõi realtime)
-docker compose up -d kafka postgres mlflow backend frontend \
-  replay-producer preprocess-buffer inference-service alert-engine
+cp .env.example .env          # giá trị mặc định đã chạy được cho môi trường local
 ```
 
-Lần đầu chạy sẽ mất vài phút (Docker tải/dựng image). Đợi đến khi xong.
+### 7.2. Khởi động hệ thống
 
-Muốn bật thêm phần tự huấn luyện (Airflow):
 ```bash
-docker compose up -d airflow-init airflow-webserver airflow-scheduler
+# Bật toàn bộ hệ thống
+docker compose up -d
+
+# Hoặc chỉ bật phần lõi (theo dõi realtime, nhẹ RAM hơn)
+docker compose up -d postgres kafka mlflow backend frontend \
+  preprocess-buffer inference-service alert-engine
 ```
 
-### 4.3. Kiểm tra đã chạy chưa
+Lần đầu chạy mất vài phút để Docker build image. Kiểm tra trạng thái:
+
 ```bash
-docker compose ps
+docker compose ps            # tất cả service nên ở trạng thái "running"
 ```
-Tất cả service nên ở trạng thái `running`.
 
-### 4.4. Mở các trang
+### 7.3. Truy cập
 
-| Mở trình duyệt vào | Để xem gì |
-|--------------------|-----------|
-| http://localhost:13000 | **Trang web chính** — màn hình theo dõi bệnh nhân |
-| http://localhost:15000 | MLflow — kho mô hình AI |
-| http://localhost:8080 | Airflow — lịch huấn luyện tự động |
-| http://localhost:18800/docs | Tài liệu API (Swagger) |
+| Giao diện | Địa chỉ | Tài khoản |
+|-----------|---------|-----------|
+| **Ứng dụng web** | http://localhost:13000 | `admin` / `admin123` |
+| MLflow | http://localhost:15000 | — |
+| Airflow | http://localhost:18080 | `admin` / `admin123` |
+| API docs (Swagger) | http://localhost:18800/docs | — |
 
-**Tài khoản đăng nhập web:** `admin` / mật khẩu `admin123`
+> **Dùng VS Code Remote / máy chủ từ xa:** mở tab **PORTS** → "Forward a Port" → nhập `13000`
+> trước khi mở `localhost:13000`.
 
-> **Lưu ý nếu dùng VS Code Remote / máy chủ từ xa:** mở tab **PORTS** ở dưới cùng VS Code → bấm "Forward a Port" → gõ `13000`. Sau đó mới mở được `localhost:13000`.
+### 7.4. Dừng hệ thống
+
+```bash
+docker compose stop                       # dừng container
+docker compose down                       # dừng & xóa container
+docker compose down -v                    # xóa cả volume (reset toàn bộ dữ liệu)
+```
 
 ---
 
-## 5. Cách xem trên trang web
+## 8. Hướng dẫn sử dụng & Demo
 
-1. Mở http://localhost:13000, đăng nhập `admin` / `admin123`.
-2. Vào menu **Patient Monitor** (Màn hình theo dõi).
-3. Ô **chọn ca** ở góc trên — gõ tên bệnh nhân để **tìm kiếm**.
-4. Chọn một ca → màn hình hiện:
-   - **Đồng hồ nguy cơ** — điểm sepsis hiện tại (xanh/cam/đỏ).
-   - **Biểu đồ trajectory** — nguy cơ thay đổi theo từng giờ.
-   - **Chỉ số sinh hiệu** — mạch, huyết áp... ô nào ngoài ngưỡng bình thường sẽ **đỏ**.
-   - **Cảnh báo** — danh sách báo động sepsis.
+### 8.1. Bơm dữ liệu một bệnh nhân
 
-Các menu khác: **ICU Stays** (danh sách ca), **Sepsis Alerts** (cảnh báo), **Analytics** (thống kê), **MLOps** (quản lý mô hình AI).
+Dùng script `tools/push_patient.py` để đưa dữ liệu một bệnh nhân vào hệ thống. Nên chọn bệnh
+nhân thuộc **tập test** (mô hình chưa học → kết quả trung thực):
+
+```bash
+python tools/push_patient.py \
+  --patient-name "Nguyen Van Demo" --age 67 --gender M \
+  --psv "data/splits/test/p017347.psv" \
+  --interval 5 --stop
+```
+
+| Tham số | Ý nghĩa |
+|---------|---------|
+| `--patient-name` | Tên bệnh nhân (hiển thị trên web) |
+| `--psv` | File `.psv` nguồn — đẩy từng giờ dữ liệu |
+| `--interval` | Số giây giữa mỗi giờ (mô phỏng realtime) |
+| `--hours N` | Chỉ đẩy N giờ đầu |
+| `--stay-id` | Đẩy vào ca đã có sẵn thay vì tạo ca mới |
+| `--stop` | Tự kết thúc ca (ENDED) sau khi đẩy xong |
+
+> Cần thư viện `requests`: `pip install requests`.
+
+### 8.2. Xem trên web
+
+Mở http://localhost:13000, đăng nhập, rồi:
+
+- **Triage Board** (`/overview`) — toàn bộ ca ICU theo mức nguy cơ, làm mới mỗi 5 giây.
+- **Patient Monitor** (`/live`) — đồng hồ nguy cơ, đường diễn tiến, chỉ số sinh tồn, cảnh báo.
+- **Sepsis Alerts** (`/alerts`) — danh sách cảnh báo; xác nhận (ACK) / bỏ qua (DISMISS).
+- **Patients** (`/patients`) — quản lý bệnh nhân và lịch sử ca ICU.
+- **MLOps** (`/mlops`) — thí nghiệm, model registry, trạng thái pipeline.
+
+![Màn hình Đăng nhập](docs/picture/1-8.png)
 
 ---
 
-## 6. Tự đẩy dữ liệu bệnh nhân vào hệ thống
+## 9. Quy trình MLOps
 
-Khi mới chạy, `replay-producer` tự mô phỏng vài bệnh nhân. Nếu bạn muốn **tự đưa dữ liệu** một bệnh nhân cụ thể vào, dùng script `tools/push_patient.py`.
+Pipeline huấn luyện gồm **4 bước**, chạy được thủ công (DVC) hoặc tự động theo lịch (Airflow):
 
-### 6.1. Script này làm gì?
-
-Nó đóng vai "thiết bị gửi chỉ số về server": tạo một ca theo dõi mới rồi đẩy chỉ số từng giờ vào hệ thống. Dữ liệu sẽ chạy qua toàn bộ pipeline và **hiện lên web**.
-
-Chạy từ máy host (không cần dựng lại Docker):
-```bash
-.venv/bin/python tools/push_patient.py [các tham số]
+```
+prepare_data → train → evaluate → compare_and_register
 ```
 
-### 6.2. Giải thích TỪNG tham số
+| Bước | Mô tả |
+|------|-------|
+| `prepare_data` | Trích đặc trưng, chia train/val/test theo bệnh nhân (70/15/15) |
+| `train` | Huấn luyện XGBoost (scale_pos_weight, early stopping), log lên MLflow |
+| `evaluate` | Đánh giá AUROC/AUPRC trên tập test giữ riêng |
+| `compare_and_register` | So champion/challenger, gate `min_auroc`, đăng ký Model Registry |
 
-| Tham số | Bắt buộc? | Mặc định | Giải thích — khi nào dùng |
-|---------|-----------|----------|---------------------------|
-| `--patient-name` | Nên có | `Test Patient` | Tên bệnh nhân, sẽ hiện trên web để dễ tìm |
-| `--age` | Không | (trống) | Tuổi bệnh nhân |
-| `--gender` | Không | (trống) | Giới tính: `M` (nam) hoặc `F` (nữ) |
-| `--external-ref` | Không | (trống) | Mã hồ sơ bệnh viện (nếu có) |
-| `--source-record` | Không | (trống) | Ghi chú nguồn dữ liệu (vd tên file gốc) |
-| `--psv` | Chọn 1 trong 2 | (trống) | Đường dẫn file `.psv` — script sẽ đọc và đẩy **từng giờ** trong file |
-| `--record` | Chọn 1 trong 2 | (trống) | Chuỗi JSON chỉ số của **đúng 1 giờ** — dùng khi muốn đẩy tay 1 lần |
-| `--hour` | Không | 0 | Số thứ tự giờ, dùng kèm `--record` |
-| `--interval` | Không | 2.0 | Nghỉ bao nhiêu **giây** giữa mỗi giờ (chỉ áp dụng với `--psv`). Để 5–10 để xem live dễ |
-| `--hours` | Không | (cả file) | Chỉ đẩy N giờ đầu của file (vd `--hours 30`) |
-| `--stay-id` | Không | (trống) | Đẩy thêm vào **ca đã có sẵn** thay vì tạo ca mới |
-| `--stop` | Không | (tắt) | Tự kết thúc ca (đánh dấu ENDED) sau khi đẩy xong |
-| `--api` | Không | `http://localhost:18800` | Địa chỉ backend |
-| `--username` / `--password` | Không | `admin` / `admin123` | Tài khoản đăng nhập để lấy quyền |
+- **DAG Airflow** `sepsis_daily_retrain` tự chạy hằng ngày lúc 02:00.
+- **MLflow** lưu thí nghiệm, chỉ số và quản lý phiên bản mô hình theo cơ chế champion/challenger.
 
-> **`--psv` hay `--record`?**
-> - Dùng `--psv` khi muốn mô phỏng cả một ca nhiều giờ (giống bệnh nhân thật nằm viện).
-> - Dùng `--record` khi chỉ muốn thử nhanh 1 giờ chỉ số tự nhập.
+Chạy thủ công bằng DVC:
 
-### 6.3. Các ví dụ chạy
-
-**Ví dụ 1 — mô phỏng một bệnh nhân nằm viện (stream cả file):**
-```bash
-.venv/bin/python tools/push_patient.py \
-  --patient-name "Nguyen Van A" --age 67 --gender M \
-  --psv Data/sepsis-2019/training_setB/p110005.psv --interval 3
-```
-→ Tạo ca cho "Nguyen Van A", đẩy từng giờ trong file, mỗi 3 giây 1 giờ.
-
-**Ví dụ 2 — chỉ đẩy 30 giờ đầu rồi kết thúc ca:**
-```bash
-.venv/bin/python tools/push_patient.py \
-  --patient-name "Tran Thi B" --age 72 --gender F \
-  --psv Data/sepsis-2019/training_setA/p001234.psv --hours 30 --stop
-```
-
-**Ví dụ 3 — đẩy tay 1 giờ chỉ số (không cần file):**
-```bash
-.venv/bin/python tools/push_patient.py --patient-name "BN khan cap" \
-  --record '{"HR":124,"O2Sat":91,"Temp":39.3,"SBP":82,"MAP":56,"Resp":28,"Lactate":4.2}' \
-  --hour 0
-```
-→ Các chỉ số: nhịp tim 124, SpO₂ 91%, sốt 39.3°C, huyết áp tụt 82, lactate cao 4.2 → nguy cơ sepsis cao.
-
-**Ví dụ 4 — đẩy thêm giờ tiếp theo vào ca vừa tạo:**
-```bash
-.venv/bin/python tools/push_patient.py --stay-id <stay-id-in-ra-o-vi-du-3> \
-  --record '{"HR":130,"SBP":78,"Lactate":5.0}' --hour 1
-```
-
-> Sau khi chạy script, mở web → Patient Monitor → tìm tên bệnh nhân vừa nhập để xem.
-
-### 6.4. Các chỉ số có thể đưa vào `record`
-
-Gửi đầy đủ hoặc chỉ một phần (thiếu thì hệ thống tự coi là "không đo"):
-
-`HR` nhịp tim · `O2Sat` SpO₂ · `Temp` nhiệt độ · `SBP` huyết áp tâm thu · `MAP` huyết áp trung bình · `DBP` huyết áp tâm trương · `Resp` nhịp thở · `Lactate` lactate máu · `WBC` bạch cầu · `Creatinine` · `Platelets` tiểu cầu · `Glucose` đường huyết · ... (tổng 40 chỉ số, xem header file `.psv` để biết hết).
-
----
-
-## 7. MLOps — phần huấn luyện AI
-
-**MLOps** = quy trình tự động hoá việc huấn luyện, kiểm thử, triển khai mô hình AI.
-
-Mỗi ngày (2h sáng), **Airflow** tự chạy lại 4 bước:
-
-| Bước | Làm gì |
-|------|--------|
-| `prepare_data` | Đọc 40k hồ sơ, chia thành tập huấn luyện / kiểm tra, tính 114 đặc trưng |
-| `train` | Huấn luyện mô hình XGBoost mới |
-| `evaluate` | Chấm điểm mô hình mới trên tập kiểm tra (chỉ số **AUROC**) |
-| `compare_and_register` | So mô hình mới với mô hình đang dùng. Tốt hơn → thay thế tự động |
-
-Chạy tay (không qua Airflow):
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e mlops
 export MLFLOW_TRACKING_URI=http://localhost:15000
-dvc repro          # chạy cả 4 bước
+dvc repro
 ```
 
-Cấu hình (số vòng huấn luyện, ngưỡng...) nằm trong file `params.yaml`.
+Tham số huấn luyện (`max_depth`, `eta`, tỷ lệ chia dữ liệu…) khai báo trong `params.yaml`.
 
 ---
 
-## 8. Cấu trúc thư mục
+## 10. Cổng dịch vụ
 
-```
-CNM-Final-Project/
-├── Data/sepsis-2019/        Dữ liệu bệnh nhân (file .psv)
-├── mlops/src/sepsis_mlops/  Code huấn luyện AI
-├── airflow/dags/            Lịch huấn luyện tự động
-├── services/
-│   ├── common/              Code dùng chung giữa các service
-│   ├── replay-producer/     Mô phỏng thiết bị theo dõi
-│   ├── preprocess-buffer/   Tính đặc trưng
-│   ├── inference-service/   Chạy mô hình AI
-│   └── alert-engine/        Luật cảnh báo
-├── backend/                 Server API + WebSocket
-├── frontend/                Trang web
-├── tools/push_patient.py    Script đẩy dữ liệu bệnh nhân
-├── infra/postgres/init.sql  Khởi tạo cơ sở dữ liệu
-├── docker-compose.yml       Khai báo toàn bộ container
-├── params.yaml              Cấu hình huấn luyện AI
-├── dvc.yaml                 Định nghĩa pipeline MLOps
-└── download_sepsis.py       Script tải dữ liệu
-```
+| Dịch vụ | Cổng host | Cổng container |
+|---------|-----------|----------------|
+| Frontend | 13000 | 3000 |
+| Backend (FastAPI) | 18800 | 8000 |
+| MLflow | 15000 | 5000 |
+| Airflow webserver | 18080 | 8080 |
+| PostgreSQL | 15432 | 5432 |
+| Kafka | 9092 | 9092 |
 
 ---
 
-## 9. Thuật ngữ (giải thích nhanh)
+## 11. Tài liệu
+
+Tài liệu chi tiết trong thư mục [`docs/`](docs/):
+
+- [`architecture.md`](docs/architecture.md) — Kiến trúc hệ thống đầy đủ
+- [`mlops.md`](docs/mlops.md) — Quy trình MLOps
+- [`runbook.md`](docs/runbook.md) — Sổ tay vận hành
+- [`api.md`](docs/api.md) — Tài liệu REST API & WebSocket
+- [`BaoCao-CNM.docx`](docs/) — Báo cáo đồ án đầy đủ
+
+---
+
+## Thuật ngữ
 
 | Từ | Nghĩa |
 |----|-------|
 | **Sepsis** | Nhiễm khuẩn huyết — phản ứng nguy hiểm của cơ thể với nhiễm trùng |
-| **ICU** | Khoa hồi sức tích cực |
-| **CDSS** | Hệ thống hỗ trợ bác sĩ ra quyết định lâm sàng |
-| **Feature (đặc trưng)** | Con số đã xử lý để AI "hiểu" được (vd: nhịp tim trung bình 6h) |
-| **XGBoost** | Loại mô hình AI dựa trên cây quyết định, mạnh với dữ liệu dạng bảng |
-| **risk_score** | Điểm nguy cơ sepsis, từ 0 (an toàn) đến 1 (rất nguy hiểm) |
-| **AUROC** | Chỉ số đo độ chính xác của mô hình (0.5 = đoán mò, 1.0 = hoàn hảo). Hệ thống đạt ~0.85 |
-| **Kafka** | "Đường ống" truyền dữ liệu giữa các service theo thời gian thực |
-| **MLflow** | Công cụ lưu và quản lý các phiên bản mô hình AI |
-| **Airflow** | Công cụ chạy công việc theo lịch (vd huấn luyện lại mỗi ngày) |
-| **Docker / container** | Cách đóng gói mỗi chương trình để chạy độc lập, giống nhau ở mọi máy |
-| **WebSocket** | Kênh để server đẩy dữ liệu lên web ngay tức thì (không cần tải lại trang) |
-| **`.psv` file** | File dữ liệu 1 bệnh nhân — mỗi dòng là 1 giờ, các cột ngăn bằng dấu `|` |
-| **stay (ca theo dõi)** | Một lần bệnh nhân nằm ICU được hệ thống theo dõi |
-| **champion / challenger** | Mô hình đang dùng (champion) vs mô hình mới (challenger) đem ra so |
-
----
-
-## 10. Công nghệ sử dụng
-
-- **AI:** XGBoost · scikit-learn
-- **MLOps:** DVC · MLflow · Apache Airflow
-- **Backend:** FastAPI · SQLAlchemy · PostgreSQL
-- **Frontend:** React · TypeScript · Vite · Ant Design · ECharts
-- **Streaming:** Apache Kafka
-- **Hạ tầng:** Docker Compose
+| **ICU** | Khoa Hồi sức tích cực |
+| **CDSS** | Hệ thống hỗ trợ quyết định lâm sàng |
+| **XGBoost** | Mô hình học máy boosting trên cây quyết định |
+| **AUROC** | Chỉ số đo độ chính xác mô hình (0.5 = đoán mò, 1.0 = hoàn hảo) |
+| **Kafka** | Hàng đợi tin nhắn truyền dữ liệu streaming giữa các service |
+| **MLOps** | Quy trình tự động hóa huấn luyện, kiểm thử, triển khai mô hình |
+| **champion / challenger** | Mô hình đang phục vụ (champion) vs mô hình mới (challenger) |
