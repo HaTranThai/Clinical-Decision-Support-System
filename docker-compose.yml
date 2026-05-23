@@ -189,6 +189,7 @@ services:
       AIRFLOW__CORE__FERNET_KEY: "46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLt0nIe3aI="
       AIRFLOW__WEBSERVER__SECRET_KEY: "sepsis-cdss-airflow-shared-secret-key-2026"
       MLFLOW_TRACKING_URI: http://mlflow:5000
+      OPERATIONAL_DB_DSN: "host=postgres port=5432 dbname=sepsis_cdss user=sepsis_admin password=sepsis_secret_2024"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./mlops:/app/mlops
@@ -218,6 +219,7 @@ services:
       AIRFLOW__WEBSERVER__SECRET_KEY: "sepsis-cdss-airflow-shared-secret-key-2026"
       AIRFLOW__API__AUTH_BACKENDS: "airflow.api.auth.backend.basic_auth"
       MLFLOW_TRACKING_URI: http://mlflow:5000
+      OPERATIONAL_DB_DSN: "host=postgres port=5432 dbname=sepsis_cdss user=sepsis_admin password=sepsis_secret_2024"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./mlops:/app/mlops
@@ -251,6 +253,7 @@ services:
       AIRFLOW__CORE__FERNET_KEY: "46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLt0nIe3aI="
       AIRFLOW__WEBSERVER__SECRET_KEY: "sepsis-cdss-airflow-shared-secret-key-2026"
       MLFLOW_TRACKING_URI: http://mlflow:5000
+      OPERATIONAL_DB_DSN: "host=postgres port=5432 dbname=sepsis_cdss user=sepsis_admin password=sepsis_secret_2024"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./mlops:/app/mlops

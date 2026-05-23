@@ -11,16 +11,12 @@ from pathlib import Path
 import pandas as pd
 
 from .config import load_config
-from .data import list_patient_files, patient_id_of, patient_is_septic, read_psv, split_patients
+from .data import build_split, list_patient_files, patient_id_of, read_psv, served_patient_ids
 from .features import engineer_patient, feature_columns
 from .schema import LABEL
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
-
-
-def _flag_worker(path: Path) -> tuple[Path, bool]:
-    return path, patient_is_septic(path)
 
 
 def _engineer_worker(args: tuple[Path, int]) -> pd.DataFrame:
@@ -50,17 +46,12 @@ def main() -> None:
     files = list_patient_files(cfg.raw_dir)
     logger.info(f"Found {len(files)} patient files in {cfg.raw_dir}")
 
-    logger.info("Pass 1: reading labels for stratified split")
-    with Pool(n_workers) as pool:
-        flag_results = pool.map(_flag_worker, files, chunksize=64)
-    ordered_files = [p for p, _ in flag_results]
-    septic_flags = [is_sep for _, is_sep in flag_results]
-    n_septic = sum(septic_flags)
-    logger.info(f"{n_septic}/{len(files)} patients become septic "
-                f"({100 * n_septic / len(files):.1f}%)")
+    served_ids: set[str] = set()
+    if cfg.operational_enabled:
+        served_ids = served_patient_ids(cfg.operational_served_status)
 
-    split = split_patients(
-        ordered_files, septic_flags, cfg.train_frac, cfg.val_frac, cfg.random_seed
+    split = build_split(
+        files, served_ids, cfg.train_frac, cfg.val_frac, cfg.random_seed
     )
 
     cfg.processed_dir.mkdir(parents=True, exist_ok=True)

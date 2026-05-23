@@ -34,7 +34,7 @@ def _predict_proba(bst: xgb.Booster, dmatrix: xgb.DMatrix) -> np.ndarray:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Evaluate sepsis model on holdout test set")
+    parser = argparse.ArgumentParser(description="Evaluate sepsis model on frozen val holdout")
     parser.add_argument("--params", default="params.yaml")
     parser.add_argument("--checkpoint", default="artifacts/model/challenger.json")
     parser.add_argument("--output", default="artifacts/evaluation/metrics.json")
@@ -43,39 +43,40 @@ def main() -> None:
     cfg = load_config(args.params)
     feat_cols = feature_columns(cfg.rolling_window)
 
-    logger.info("Loading test split")
-    test_df = load_split(cfg.processed_dir, "test")
-    x_test = test_df[feat_cols].to_numpy(dtype=np.float32)
-    y_test = test_df[LABEL].to_numpy(dtype=np.int8)
+    logger.info("Loading val split (frozen evaluation holdout)")
+    val_df = load_split(cfg.processed_dir, "val")
+    x_val = val_df[feat_cols].to_numpy(dtype=np.float32)
+    y_val = val_df[LABEL].to_numpy(dtype=np.int8)
 
     logger.info(f"Loading model from {args.checkpoint}")
     bst = xgb.Booster()
     bst.load_model(args.checkpoint)
 
-    dtest = xgb.DMatrix(x_test, feature_names=feat_cols)
-    proba = _predict_proba(bst, dtest)
+    dval = xgb.DMatrix(x_val, feature_names=feat_cols)
+    proba = _predict_proba(bst, dval)
 
     thr = cfg.decision_threshold
     preds = (proba >= thr).astype(np.int8)
 
-    auroc = float(roc_auc_score(y_test, proba))
-    auprc = float(average_precision_score(y_test, proba))
-    tn, fp, fn, tp = confusion_matrix(y_test, preds, labels=[0, 1]).ravel()
+    auroc = float(roc_auc_score(y_val, proba))
+    auprc = float(average_precision_score(y_val, proba))
+    tn, fp, fn, tp = confusion_matrix(y_val, preds, labels=[0, 1]).ravel()
     sensitivity = float(tp / (tp + fn)) if (tp + fn) else 0.0
     specificity = float(tn / (tn + fp)) if (tn + fp) else 0.0
 
     metrics = {
         "auroc": auroc,
         "auprc": auprc,
+        "eval_split": "val",
         "decision_threshold": thr,
-        "precision": float(precision_score(y_test, preds, zero_division=0)),
-        "recall": float(recall_score(y_test, preds, zero_division=0)),
-        "f1": float(f1_score(y_test, preds, zero_division=0)),
+        "precision": float(precision_score(y_val, preds, zero_division=0)),
+        "recall": float(recall_score(y_val, preds, zero_division=0)),
+        "f1": float(f1_score(y_val, preds, zero_division=0)),
         "sensitivity": sensitivity,
         "specificity": specificity,
         "confusion_matrix": {"tn": int(tn), "fp": int(fp), "fn": int(fn), "tp": int(tp)},
-        "n_test_rows": int(len(y_test)),
-        "n_test_positive": int(y_test.sum()),
+        "n_eval_rows": int(len(y_val)),
+        "n_eval_positive": int(y_val.sum()),
         "checkpoint": args.checkpoint,
     }
 
@@ -83,7 +84,7 @@ def main() -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     logger.info(f"Saved metrics to {output}")
-    logger.info(f"Test AUROC={auroc:.4f} AUPRC={auprc:.4f} "
+    logger.info(f"Val AUROC={auroc:.4f} AUPRC={auprc:.4f} "
                 f"Sens={sensitivity:.4f} Spec={specificity:.4f}")
 
     mlflow.set_experiment(cfg.experiment_name)

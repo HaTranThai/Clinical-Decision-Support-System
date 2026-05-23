@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import hashlib
+import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from .schema import ALL_COLUMNS, LABEL
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -43,30 +47,82 @@ def patient_is_septic(path: Path) -> bool:
     return bool(labels.max() == 1)
 
 
-def split_patients(
+def _unit_hash(key: str, salt: str) -> float:
+    digest = hashlib.sha256(f"{salt}:{key}".encode("utf-8")).hexdigest()
+    return int(digest[:12], 16) / float(0x1000000000000)
+
+
+def assign_split(patient_id: str, train_frac: float, val_frac: float, seed: int) -> str:
+    bucket = _unit_hash(patient_id, f"split-{seed}")
+    if bucket < train_frac:
+        return "train"
+    if bucket < train_frac + val_frac:
+        return "val"
+    return "test"
+
+
+def train_subrole(patient_id: str, es_frac: float, seed: int) -> str:
+    if es_frac <= 0:
+        return "fit"
+    return "es" if _unit_hash(patient_id, f"es-{seed}") < es_frac else "fit"
+
+
+def served_patient_ids(statuses: list[str]) -> set[str]:
+    dsn = os.environ.get("OPERATIONAL_DB_DSN")
+    if not dsn:
+        logger.info("OPERATIONAL_DB_DSN not set — skipping operational data, static split only")
+        return set()
+    try:
+        import psycopg2
+    except ImportError:
+        logger.warning("psycopg2 not available — skipping operational data")
+        return set()
+    placeholders = ",".join(["%s"] * len(statuses))
+    query = f"SELECT DISTINCT source_record FROM icu_stay WHERE status IN ({placeholders})"
+    try:
+        conn = psycopg2.connect(dsn)
+    except Exception as exc:
+        logger.warning(f"Could not connect to operational DB ({exc}) — skipping operational data")
+        return set()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(query, statuses)
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    ids = {str(r[0]).strip() for r in rows if r[0]}
+    logger.info(f"Operational DB reported {len(ids)} distinct served source_records")
+    return ids
+
+
+def build_split(
     files: list[Path],
-    septic_flags: list[bool],
+    served_ids: set[str],
     train_frac: float,
     val_frac: float,
     seed: int,
 ) -> PatientSplit:
-    rng = np.random.default_rng(seed)
-    files_arr = np.array(files, dtype=object)
-    flags = np.array(septic_flags, dtype=bool)
-
     train: list[Path] = []
     val: list[Path] = []
     test: list[Path] = []
+    promoted = 0
 
-    for flag_value in (True, False):
-        group = files_arr[flags == flag_value]
-        group = group[rng.permutation(len(group))]
-        n = len(group)
-        n_train = int(round(n * train_frac))
-        n_val = int(round(n * val_frac))
-        train.extend(group[:n_train].tolist())
-        val.extend(group[n_train:n_train + n_val].tolist())
-        test.extend(group[n_train + n_val:].tolist())
+    for path in files:
+        pid = patient_id_of(path)
+        role = assign_split(pid, train_frac, val_frac, seed)
+        if role == "val":
+            val.append(path)
+        elif role == "train":
+            train.append(path)
+        else:
+            if pid in served_ids:
+                train.append(path)
+                promoted += 1
+            else:
+                test.append(path)
+
+    if promoted:
+        logger.info(f"Promoted {promoted} served test-pool patients into train (operational loop)")
 
     return PatientSplit(train=sorted(train), val=sorted(val), test=sorted(test))
 

@@ -68,7 +68,9 @@ def main() -> None:
 
     client.set_model_version_tag(model_name, mv.version, "test_auroc", f"{challenger_auroc:.4f}")
     client.set_model_version_tag(model_name, mv.version, "test_auprc", f"{challenger_auprc:.4f}")
-    client.set_model_version_tag(model_name, mv.version, "test_sensitivity",
+    client.set_model_version_tag(model_name, mv.version, "val_auroc", f"{challenger_auroc:.4f}")
+    client.set_model_version_tag(model_name, mv.version, "val_auprc", f"{challenger_auprc:.4f}")
+    client.set_model_version_tag(model_name, mv.version, "val_sensitivity",
                                  f"{metrics.get('sensitivity', 0.0):.4f}")
     client.set_model_version_tag(model_name, mv.version, "trained_at",
                                  datetime.now(timezone.utc).isoformat())
@@ -77,7 +79,8 @@ def main() -> None:
     try:
         production = client.get_latest_versions(model_name, stages=["Production"])
         if production:
-            champion_auroc = float(production[0].tags.get("test_auroc", 0.0))
+            champion_tags = production[0].tags
+            champion_auroc = float(champion_tags.get("val_auroc", champion_tags.get("test_auroc", 0.0)))
     except Exception as e:
         logger.warning(f"Could not fetch champion: {e}")
 

@@ -7,12 +7,19 @@ data:
     test_frac: 0.15
     random_seed: 42
 
+operational:
+  enabled: true
+  served_status:
+    - ENDED
+    - RUNNING
+
 features:
   rolling_window: 6
 
 xgboost:
   num_boost_round: 600
   early_stopping_rounds: 50
+  early_stopping_holdout_frac: 0.12
   max_depth: 6
   eta: 0.05
   subsample: 0.8

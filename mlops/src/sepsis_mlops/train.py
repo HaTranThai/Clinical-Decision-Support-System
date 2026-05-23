@@ -12,7 +12,7 @@ import xgboost as xgb
 from sklearn.metrics import average_precision_score, roc_auc_score
 
 from .config import load_config
-from .data import load_split
+from .data import load_split, train_subrole
 from .features import feature_columns
 from .schema import LABEL
 
@@ -36,25 +36,35 @@ def main() -> None:
     cfg = load_config(args.params)
     feat_cols = feature_columns(cfg.rolling_window)
 
-    logger.info("Loading train/val splits")
+    logger.info("Loading train split (val stays frozen for evaluation only)")
     train_df = load_split(cfg.processed_dir, "train")
-    val_df = load_split(cfg.processed_dir, "val")
 
-    x_train = train_df[feat_cols].to_numpy(dtype=np.float32)
-    y_train = train_df[LABEL].to_numpy(dtype=np.int8)
-    x_val = val_df[feat_cols].to_numpy(dtype=np.float32)
-    y_val = val_df[LABEL].to_numpy(dtype=np.int8)
-    del train_df, val_df
+    es_frac = cfg.xgb_early_stopping_holdout_frac
+    roles = train_df["patient_id"].map(
+        lambda pid: train_subrole(str(pid), es_frac, cfg.random_seed)
+    )
+    is_es = (roles == "es").to_numpy()
+    fit_df = train_df[~is_es]
+    es_df = train_df[is_es]
+    logger.info(f"Train split: {len(fit_df)} fit rows, {len(es_df)} early-stopping rows "
+                f"(carved from train, val untouched)")
+
+    x_train = fit_df[feat_cols].to_numpy(dtype=np.float32)
+    y_train = fit_df[LABEL].to_numpy(dtype=np.int8)
+    x_es = es_df[feat_cols].to_numpy(dtype=np.float32)
+    y_es = es_df[LABEL].to_numpy(dtype=np.int8)
+    del train_df, fit_df, es_df
 
     n_pos = int(y_train.sum())
     n_neg = int(len(y_train) - n_pos)
     scale_pos_weight = n_neg / max(n_pos, 1)
-    logger.info(f"Train rows={len(y_train)} pos={n_pos} neg={n_neg} "
+    logger.info(f"Fit rows={len(y_train)} pos={n_pos} neg={n_neg} "
                 f"scale_pos_weight={scale_pos_weight:.2f}")
 
     dtrain = xgb.DMatrix(x_train, label=y_train, feature_names=feat_cols)
-    dval = xgb.DMatrix(x_val, label=y_val, feature_names=feat_cols)
-    del x_train, x_val
+    dval = xgb.DMatrix(x_es, label=y_es, feature_names=feat_cols)
+    y_val = y_es
+    del x_train, x_es
 
     xgb_params = {
         "objective": "binary:logistic",
@@ -81,8 +91,8 @@ def main() -> None:
 
         mlflow.log_params({
             "model_type": "xgboost",
-            "n_train_rows": len(y_train),
-            "n_val_rows": len(y_val),
+            "n_fit_rows": len(y_train),
+            "n_es_rows": len(y_val),
             "n_features": len(feat_cols),
             "num_boost_round": cfg.xgb_num_boost_round,
             "early_stopping_rounds": cfg.xgb_early_stopping_rounds,
@@ -101,26 +111,26 @@ def main() -> None:
             xgb_params,
             dtrain,
             num_boost_round=cfg.xgb_num_boost_round,
-            evals=[(dtrain, "train"), (dval, "val")],
+            evals=[(dtrain, "fit"), (dval, "es")],
             early_stopping_rounds=cfg.xgb_early_stopping_rounds,
             evals_result=evals_result,
             verbose_eval=False,
         )
 
-        for i, value in enumerate(evals_result["val"]["auc"]):
-            mlflow.log_metric("val_auc_curve", value, step=i)
+        for i, value in enumerate(evals_result["es"]["auc"]):
+            mlflow.log_metric("es_auc_curve", value, step=i)
 
-        val_proba = _predict_proba(bst, dval)
-        val_auroc = float(roc_auc_score(y_val, val_proba))
-        val_auprc = float(average_precision_score(y_val, val_proba))
+        es_proba = _predict_proba(bst, dval)
+        es_auroc = float(roc_auc_score(y_val, es_proba))
+        es_auprc = float(average_precision_score(y_val, es_proba))
 
         mlflow.log_metrics({
-            "val_auroc": val_auroc,
-            "val_auprc": val_auprc,
+            "es_auroc": es_auroc,
+            "es_auprc": es_auprc,
             "best_iteration": int(bst.best_iteration),
         })
         logger.info(f"Training done best_iteration={bst.best_iteration} "
-                    f"val_auroc={val_auroc:.4f} val_auprc={val_auprc:.4f}")
+                    f"es_auroc={es_auroc:.4f} es_auprc={es_auprc:.4f}")
 
         bst.set_attr(
             mlflow_run_id=run_id,

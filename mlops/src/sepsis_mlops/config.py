@@ -20,9 +20,12 @@ class PipelineConfig:
     val_frac: float
     test_frac: float
     random_seed: int
+    operational_enabled: bool
+    operational_served_status: list[str]
     rolling_window: int
     xgb_num_boost_round: int
     xgb_early_stopping_rounds: int
+    xgb_early_stopping_holdout_frac: float
     xgb_max_depth: int
     xgb_eta: float
     xgb_subsample: float
@@ -57,9 +60,12 @@ def load_config(params_path: str | Path = REPO_ROOT / "params.yaml") -> Pipeline
         val_frac=float(_get(params, "data.split.val_frac", 0.15)),
         test_frac=float(_get(params, "data.split.test_frac", 0.15)),
         random_seed=int(_get(params, "data.split.random_seed", 42)),
+        operational_enabled=bool(_get(params, "operational.enabled", True)),
+        operational_served_status=list(_get(params, "operational.served_status", ["ENDED", "RUNNING"])),
         rolling_window=int(_get(params, "features.rolling_window", 6)),
         xgb_num_boost_round=int(_get(params, "xgboost.num_boost_round", 600)),
         xgb_early_stopping_rounds=int(_get(params, "xgboost.early_stopping_rounds", 50)),
+        xgb_early_stopping_holdout_frac=float(_get(params, "xgboost.early_stopping_holdout_frac", 0.12)),
         xgb_max_depth=int(_get(params, "xgboost.max_depth", 6)),
         xgb_eta=float(_get(params, "xgboost.eta", 0.05)),
         xgb_subsample=float(_get(params, "xgboost.subsample", 0.8)),
