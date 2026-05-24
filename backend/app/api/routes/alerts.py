@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.db.session import get_db
-from app.db.base import Alert, AlertAction, User
+from app.db.base import Alert, AlertAction, User, ICUStay, Patient
 from app.schemas.schemas import AlertOut, AlertDetailOut, AlertActionOut, AlertActionRequest
 from app.api.deps import get_current_user
 
@@ -24,7 +24,14 @@ async def list_alerts(
     db: AsyncSession = Depends(get_db),
     _user=Depends(get_current_user),
 ):
-    query = select(Alert).order_by(Alert.start_time.desc()).offset(offset).limit(limit)
+    query = (
+        select(Alert, ICUStay.patient_id, ICUStay.source_record, Patient.name)
+        .join(ICUStay, Alert.stay_id == ICUStay.stay_id)
+        .join(Patient, ICUStay.patient_id == Patient.patient_id)
+        .order_by(Alert.start_time.desc())
+        .offset(offset)
+        .limit(limit)
+    )
     if status:
         query = query.where(Alert.status == status)
     if stay_id:
@@ -35,28 +42,39 @@ async def list_alerts(
         AlertOut(
             alert_id=str(a.alert_id),
             stay_id=str(a.stay_id),
+            patient_id=str(patient_id) if patient_id else None,
+            patient_name=patient_name,
+            source_record=source_record,
             start_time=str(a.start_time) if a.start_time else None,
             last_update=str(a.last_update) if a.last_update else None,
             severity=a.severity,
             status=a.status,
             evidence_json=a.evidence_json,
         )
-        for a in result.scalars().all()
+        for a, patient_id, source_record, patient_name in result.all()
     ]
 
 
 @router.get("/{alert_id}", response_model=AlertDetailOut)
 async def get_alert_detail(alert_id: str, db: AsyncSession = Depends(get_db), _user=Depends(get_current_user)):
     result = await db.execute(
-        select(Alert).options(selectinload(Alert.actions)).where(Alert.alert_id == alert_id)
+        select(Alert, ICUStay.patient_id, ICUStay.source_record, Patient.name)
+        .join(ICUStay, Alert.stay_id == ICUStay.stay_id)
+        .join(Patient, ICUStay.patient_id == Patient.patient_id)
+        .options(selectinload(Alert.actions))
+        .where(Alert.alert_id == alert_id)
     )
-    a = result.scalar_one_or_none()
-    if not a:
+    row = result.first()
+    if not row:
         raise HTTPException(status_code=404, detail="Alert not found")
+    a, patient_id, source_record, patient_name = row
 
     return AlertDetailOut(
         alert_id=str(a.alert_id),
         stay_id=str(a.stay_id),
+        patient_id=str(patient_id) if patient_id else None,
+        patient_name=patient_name,
+        source_record=source_record,
         start_time=str(a.start_time) if a.start_time else None,
         last_update=str(a.last_update) if a.last_update else None,
         severity=a.severity,

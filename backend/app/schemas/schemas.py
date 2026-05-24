@@ -85,6 +85,9 @@ class SepsisPredictionOut(BaseModel):
 class AlertOut(BaseModel):
     alert_id: str
     stay_id: str
+    patient_id: str | None = None
+    patient_name: str | None = None
+    source_record: str | None = None
     start_time: str | None
     last_update: str | None
     severity: float | None

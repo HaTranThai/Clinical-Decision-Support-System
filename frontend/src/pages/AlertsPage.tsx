@@ -62,6 +62,11 @@ export default function AlertsPage() {
 
     const columns = [
         {
+            title: 'Bệnh nhân',
+            dataIndex: 'patient_name',
+            render: (n: string | null, record: Alert) => n || record.source_record || '—',
+        },
+        {
             title: 'Severity',
             dataIndex: 'severity',
             render: (v: number | null) => <Tag color={severityColor(v)}>Severity {v ?? '—'}</Tag>,
@@ -123,6 +128,7 @@ export default function AlertsPage() {
                             </Tag>
                             <Tag color={statusColor(alertDetail.status)}>{alertDetail.status}</Tag>
                         </div>
+                        <div><Text strong>Bệnh nhân:</Text> {alertDetail.patient_name || '—'}{alertDetail.source_record ? ` (${alertDetail.source_record})` : ''}</div>
                         <div><Text strong>Stay ID:</Text> {alertDetail.stay_id}</div>
                         <div><Text strong>Start Time:</Text> {alertDetail.start_time?.slice(0, 19) || '—'}</div>
                         <div><Text strong>Last Update:</Text> {alertDetail.last_update?.slice(0, 19) || '—'}</div>

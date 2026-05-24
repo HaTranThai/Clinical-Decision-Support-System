@@ -27,6 +27,9 @@ export interface SepsisPrediction {
 export interface Alert {
     alert_id: string;
     stay_id: string;
+    patient_id: string | null;
+    patient_name: string | null;
+    source_record: string | null;
     start_time: string | null;
     last_update: string | null;
     severity: number | null;
