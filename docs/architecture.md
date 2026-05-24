@@ -192,12 +192,19 @@ Quan hệ chính: `patient` 1–N `icu_stay`; `icu_stay` 1–N `sepsis_predictio
 | Đặc trưng đầu vào | 114 đặc trưng kỹ thuật từ 41 cột chỉ số gốc |
 | Kỹ thuật đặc trưng | Forward-fill tín hiệu + thống kê cửa sổ trượt 6 giờ + chỉ báo độ mới |
 | Mất cân bằng lớp | Dùng `scale_pos_weight` (tỷ lệ dương ~1.8%) |
-| Chia dữ liệu | Theo bệnh nhân, phân tầng theo nhãn, tất định — 70/15/15 |
-| Chỉ số đánh giá | AUROC (~0.847), AUPRC (~0.126), Sensitivity, Specificity |
-| Cổng chất lượng | `min_auroc` (mặc định 0.75) — không đạt thì không promote |
+| Chia dữ liệu | Theo bệnh nhân, **hash ổn định**, tất định — 70/15/15 |
+| Chỉ số đánh giá | AUROC (~0.84 trên tập **val**), AUPRC, Sensitivity, Specificity |
+| Cổng chất lượng | `min_auroc` (mặc định 0.75) đo trên **val** — không đạt thì không promote |
 
-Việc chia dữ liệu ở **mức bệnh nhân** (mỗi file `.psv` đi trọn vào một split) tránh rò rỉ giữa
-các giờ của cùng một người. Khi demo nên dùng bệnh nhân tập test (`data/splits/test/`).
+Việc chia dữ liệu ở **mức bệnh nhân** (mỗi file `.psv` đi trọn vào một split) theo **hàm băm
+ổn định** trên mã bệnh nhân, bảo đảm mỗi người luôn rơi vào cùng một tập kể cả khi dữ liệu mở
+rộng — tránh rò rỉ giữa các giờ của cùng một người và giữa các lần tái huấn luyện. Vai trò ba
+tập: **train** để huấn luyện (cắt một phần làm holdout dừng sớm), **val** giữ đóng băng để đánh
+giá/cổng promote, **test** dành riêng để chạy demo trên giao diện (`data/splits/test/`).
+
+**Vòng lặp dữ liệu vận hành:** `prepare_data` đọc thêm dữ liệu vận hành từ PostgreSQL
+(`OPERATIONAL_DB_DSN`) — ca bệnh đã phục vụ trong hệ thống được gộp vào tập train ở lần tái huấn
+luyện sau, tạo vòng lặp khép kín giữa phục vụ trực tuyến và huấn luyện ngoại tuyến.
 
 ---
 
@@ -206,7 +213,7 @@ các giờ của cùng một người. Khi demo nên dùng bệnh nhân tập te
 ### 8.1 Pipeline 4 bước
 ```
 prepare_data  →  train  →  evaluate  →  compare_and_register
-(trích đặc trưng)  (XGBoost)  (test set)   (register + promote)
+(.psv + dữ liệu vận hành)  (XGBoost)  (val set)   (register + promote)
 ```
 
 ### 8.2 Hai cách chạy pipeline
@@ -236,6 +243,7 @@ experiments, model registry, trạng thái pipeline tái huấn luyện.
 | Airflow webserver | 18080 | 8080 | Giao diện quản lý DAG |
 | PostgreSQL | 15432 | 5432 | Cơ sở dữ liệu |
 | Kafka | 9092 | 9092 | Hàng đợi tin nhắn |
+| cloudflared | — | — | Cloudflare Tunnel — đưa frontend ra domain công khai |
 
 ---
 
@@ -282,6 +290,8 @@ Toàn bộ hệ thống đóng gói bằng **Docker Compose** (`docker-compose.y
 - **Streaming**: `replay-producer`, `preprocess-buffer`, `inference-service`, `alert-engine`
 - **Ứng dụng**: `backend`, `frontend`
 - **MLOps**: `mlflow`, `airflow-init`, `airflow-webserver`, `airflow-scheduler`
+- **Truy cập từ xa**: `cloudflared` (Cloudflare Tunnel) đưa frontend ra domain công khai
+  (`cdss.mrworld.io.vn`) qua biến `CLOUDFLARE_TUNNEL_TOKEN` trong `.env`, không cần mở cổng trực tiếp
 
 Khởi động: `docker compose up -d`. Chi tiết vận hành xem `docs/runbook.md`.
 

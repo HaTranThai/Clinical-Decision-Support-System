@@ -6,10 +6,10 @@ Cùng một pipeline có thể chạy thủ công (DVC) hoặc theo lịch (Airf
 ## Luồng xử lý
 
 ```text
-File .psv của PhysioNet/CinC 2019
- -> prepare_data         (trích đặc trưng, chia train/val/test theo bệnh nhân)
+File .psv của PhysioNet/CinC 2019  +  dữ liệu vận hành (PostgreSQL: ca đã phục vụ)
+ -> prepare_data         (trích đặc trưng, chia train/val/test theo bệnh nhân bằng hash ổn định)
  -> train                (huấn luyện XGBoost challenger, log lên MLflow)
- -> evaluate             (đánh giá chỉ số trên tập test giữ riêng)
+ -> evaluate             (đánh giá chỉ số trên tập val giữ đóng băng)
  -> compare_and_register (kiểm soát bằng min_auroc, register + promote trong MLflow Model Registry)
  -> services/inference-service/artifacts/sepsis_model.json
  -> pipeline phục vụ realtime
@@ -18,12 +18,28 @@ File .psv của PhysioNet/CinC 2019
 ## Cách chia dữ liệu
 
 Việc chia dữ liệu thực hiện ở **mức bệnh nhân** (mỗi file `.psv` đi trọn vẹn vào một trong
-train/val/test), phân tầng (stratified) theo nhãn nhiễm khuẩn huyết, và có tính tất định
-(`random_seed` trong `params.yaml`). Tỷ lệ mặc định là 70 / 15 / 15. Cách này tránh rò rỉ dữ liệu
-giữa các giờ của cùng một bệnh nhân.
+train/val/test) theo **hàm băm (hash) ổn định** trên mã bệnh nhân, có tính tất định
+(`random_seed` trong `params.yaml`). Tỷ lệ mặc định là 70 / 15 / 15. Chia theo hash bảo đảm mỗi
+bệnh nhân **luôn rơi vào cùng một tập** kể cả khi tập dữ liệu mở rộng, nhờ đó tránh rò rỉ dữ liệu
+giữa các giờ của cùng một bệnh nhân và giữa các lần huấn luyện lại.
+
+Ba tập có vai trò tách bạch:
+- **train** — dùng để huấn luyện. Một phần nhỏ được tách riêng (`early_stopping_holdout_frac`)
+  làm holdout cho cơ chế dừng sớm.
+- **val** — **giữ đóng băng**, chỉ dùng để đánh giá và làm cổng quyết định promote mô hình.
+- **test** — dành riêng cho việc **chạy thử trên giao diện** (mô hình chưa từng học).
+
+## Vòng lặp dữ liệu vận hành
+
+Theo tinh thần MLOps, `prepare_data` còn đọc dữ liệu vận hành từ PostgreSQL (`OPERATIONAL_DB_DSN`):
+những ca bệnh **đã được phục vụ** trong hệ thống (bảng `icu_stay`, đã có nhãn từ hồ sơ `.psv`
+gốc) sẽ được **gộp vào tập train** ở lần tái huấn luyện kế tiếp — tạo thành vòng lặp khép kín
+giữa phục vụ trực tuyến và huấn luyện ngoại tuyến. Tập `val` luôn được giữ đóng băng để đánh giá
+trung thực.
 
 `tools/organize_splits.py` tạo bản sao (symlink) của các split vào `data/splits/{train,val,test}/`
-để khi demo có thể chọn bệnh nhân trong tập test (mô hình chưa từng học).
+và xuất danh sách bệnh nhân test ra `data/splits/test_patients.txt` để khi demo có thể chọn bệnh
+nhân trong tập test (mô hình chưa từng học).
 
 ## Cài đặt cục bộ
 

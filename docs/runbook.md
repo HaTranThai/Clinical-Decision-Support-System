@@ -56,12 +56,13 @@ Mở http://localhost:13000 → đăng nhập `admin` / `admin123`.
 
 ### Bước 2: Bơm dữ liệu một bệnh nhân
 
-Dùng bệnh nhân trong tập test (mô hình chưa từng học — demo trung thực):
+Dùng bệnh nhân trong tập test (mô hình chưa từng học — demo trung thực). Danh sách bệnh nhân
+test xem ở `data/splits/test_patients.txt` (ví dụ `p000003`):
 
 ```bash
 python tools/push_patient.py \
   --patient-name "Demo Test Patient" \
-  --psv "data/splits/test/p017347.psv" \
+  --psv "data/splits/test/p000003.psv" \
   --interval 5 --stop
 ```
 
