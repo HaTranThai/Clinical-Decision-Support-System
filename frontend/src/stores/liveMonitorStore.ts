@@ -30,7 +30,8 @@ interface LiveMonitorState {
     disconnectWs: () => void;
 }
 
-const WS_BASE = (import.meta as any).env?.VITE_WS_BASE_URL || `ws://${window.location.host}`;
+const WS_PROTO = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const WS_BASE = (import.meta as any).env?.VITE_WS_BASE_URL || `${WS_PROTO}//${window.location.host}`;
 const MAX_HISTORY = 600;
 
 function upsertRisk(list: RiskPoint[], point: RiskPoint): RiskPoint[] {
