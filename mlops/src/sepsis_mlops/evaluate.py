@@ -92,6 +92,8 @@ def main() -> None:
     mlflow_metrics = {
         "eval_auroc": auroc,
         "eval_auprc": auprc,
+        "val_auroc": auroc,
+        "val_auprc": auprc,
         "eval_sensitivity": sensitivity,
         "eval_specificity": specificity,
         "eval_precision": metrics["precision"],

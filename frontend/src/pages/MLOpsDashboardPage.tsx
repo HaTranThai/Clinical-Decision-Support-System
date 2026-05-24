@@ -41,11 +41,10 @@ function DatasetTable({ split, label }: { split: SplitStats | undefined; label: 
     return (
         <tr>
             <td style={{ padding: '4px 8px', fontWeight: 500 }}>{label}</td>
-            <td style={{ padding: '4px 8px' }}>{split.records.length}</td>
-            <td style={{ padding: '4px 8px' }}>{split.n_beats.toLocaleString()}</td>
-            <td style={{ padding: '4px 8px' }}>{split.class_counts.N.toLocaleString()}</td>
-            <td style={{ padding: '4px 8px' }}>{split.class_counts.A.toLocaleString()}</td>
-            <td style={{ padding: '4px 8px' }}>{split.class_counts.V.toLocaleString()}</td>
+            <td style={{ padding: '4px 8px' }}>{split.n_patients.toLocaleString()}</td>
+            <td style={{ padding: '4px 8px' }}>{split.n_rows.toLocaleString()}</td>
+            <td style={{ padding: '4px 8px' }}>{split.n_positive.toLocaleString()}</td>
+            <td style={{ padding: '4px 8px' }}>{(split.positive_rate * 100).toFixed(2)}%</td>
         </tr>
     );
 }
@@ -87,12 +86,12 @@ export default function MLOpsDashboardPage() {
 
     const trendLabels = trendRuns.map((r) => dayjs(r.start_time!).format('MM-DD HH:mm'));
     const valAurocSeries = trendRuns.map((r) => (r.metrics.val_auroc != null ? +r.metrics.val_auroc.toFixed(4) : null));
-    const testAurocSeries = trendRuns.map((r) => (r.metrics.test_auroc != null ? +r.metrics.test_auroc.toFixed(4) : null));
+    const esAurocSeries = trendRuns.map((r) => (r.metrics.es_auroc != null ? +r.metrics.es_auroc.toFixed(4) : null));
 
     const chartOption = {
         title: { text: 'AUROC Trend (last 20 runs)', textStyle: { color: '#e5e7eb', fontSize: 14 } },
         tooltip: { trigger: 'axis' },
-        legend: { data: ['Validation AUROC', 'Test AUROC'], textStyle: { color: '#9ca3af' } },
+        legend: { data: ['Validation AUROC', 'Train-holdout AUROC'], textStyle: { color: '#9ca3af' } },
         grid: { left: 50, right: 20, top: 60, bottom: 60 },
         xAxis: {
             type: 'category',
@@ -119,9 +118,9 @@ export default function MLOpsDashboardPage() {
                 smooth: true,
             },
             {
-                name: 'Test AUROC',
+                name: 'Train-holdout AUROC',
                 type: 'line',
-                data: testAurocSeries,
+                data: esAurocSeries,
                 itemStyle: { color: '#3b82f6' },
                 lineStyle: { color: '#3b82f6' },
                 connectNulls: true,
@@ -254,11 +253,10 @@ export default function MLOpsDashboardPage() {
                                         <thead>
                                             <tr style={{ borderBottom: '1px solid #374151' }}>
                                                 <th style={{ padding: '4px 8px', textAlign: 'left' }}>Split</th>
-                                                <th style={{ padding: '4px 8px', textAlign: 'left' }}>Records</th>
-                                                <th style={{ padding: '4px 8px', textAlign: 'left' }}>Beats</th>
-                                                <th style={{ padding: '4px 8px', textAlign: 'left' }}>N</th>
-                                                <th style={{ padding: '4px 8px', textAlign: 'left' }}>A</th>
-                                                <th style={{ padding: '4px 8px', textAlign: 'left' }}>V</th>
+                                                <th style={{ padding: '4px 8px', textAlign: 'left' }}>Patients</th>
+                                                <th style={{ padding: '4px 8px', textAlign: 'left' }}>Rows</th>
+                                                <th style={{ padding: '4px 8px', textAlign: 'left' }}>Positive</th>
+                                                <th style={{ padding: '4px 8px', textAlign: 'left' }}>Pos rate</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -267,9 +265,9 @@ export default function MLOpsDashboardPage() {
                                             <DatasetTable split={datasetStats.test} label="Test" />
                                         </tbody>
                                     </table>
-                                    {datasetStats.total_records != null && (
+                                    {datasetStats.total_patients != null && (
                                         <Text type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 12 }}>
-                                            Total records: {datasetStats.total_records}
+                                            Tổng: {datasetStats.total_patients.toLocaleString()} bệnh nhân · {datasetStats.n_features ?? '—'} đặc trưng
                                         </Text>
                                     )}
                                 </div>

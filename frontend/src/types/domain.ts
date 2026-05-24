@@ -155,9 +155,10 @@ export interface PipelineStatus {
 }
 
 export interface SplitStats {
-    n_beats: number;
-    records: string[];
-    class_counts: { N: number; A: number; V: number };
+    n_patients: number;
+    n_rows: number;
+    n_positive: number;
+    positive_rate: number;
 }
 
 export interface DatasetStats {
@@ -165,6 +166,7 @@ export interface DatasetStats {
     train?: SplitStats;
     val?: SplitStats;
     test?: SplitStats;
-    total_records?: number;
+    n_features?: number;
+    total_patients?: number;
     generated_at?: string;
 }

@@ -86,6 +86,11 @@ async def get_experiments(_user=Depends(get_current_user)):
             metrics = {m["key"]: m["value"] for m in run_data.get("metrics", [])}
             params = {p["key"]: p["value"] for p in run_data.get("params", [])}
 
+            if "val_auroc" not in metrics and "eval_auroc" in metrics:
+                metrics["val_auroc"] = metrics["eval_auroc"]
+            if "val_auprc" not in metrics and "eval_auprc" in metrics:
+                metrics["val_auprc"] = metrics["eval_auprc"]
+
             start_ms = info.get("start_time", 0)
             end_ms = info.get("end_time")
             duration = (
@@ -206,7 +211,7 @@ async def get_pipeline_status(_user=Depends(get_current_user)):
 async def get_dataset_stats(_user=Depends(get_current_user)):
     """Return dataset statistics from the pre-computed JSON file."""
     if DATASET_STATS_PATH.exists():
-        return json.loads(DATASET_STATS_PATH.read_text())
+        return {"available": True, **json.loads(DATASET_STATS_PATH.read_text())}
     return {"available": False}
 
 
