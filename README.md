@@ -292,12 +292,48 @@ prepare_data → train → evaluate → compare_and_register
 | `evaluate` | Đánh giá AUROC/AUPRC trên tập **val** giữ đóng băng |
 | `compare_and_register` | So champion/challenger, cổng `min_auroc`, đăng ký Model Registry |
 
+**Chạy thủ công bằng DVC** (tái lập, chạy trên host):
+
 ```bash
+# 1. Tạo môi trường Python và cài gói mlops (kéo theo dvc)
 python -m venv .venv && source .venv/bin/activate
 pip install -e mlops
+
+# 2. Khởi tạo DVC (chỉ chạy LẦN ĐẦU — tạo thư mục .dvc)
+dvc init        # nếu cây làm việc git chưa sạch, dùng: dvc init -f
+
+# 3. Trỏ MLflow về cổng host (vì chạy ngoài Docker, không phải mlflow:5000)
 export MLFLOW_TRACKING_URI=http://localhost:15000
+
+# 4. (Tùy chọn) gộp dữ liệu vận hành từ PostgreSQL vào tập train — cần psycopg2
+pip install psycopg2-binary
+export OPERATIONAL_DB_DSN="host=localhost port=15432 dbname=sepsis_cdss user=sepsis_admin password=sepsis_secret_2024"
+
+# 5. Chạy lại toàn bộ pipeline 4 bước
 dvc repro
 ```
+
+| Lệnh DVC | Tác dụng |
+|----------|----------|
+| `dvc repro` | Chạy các stage trong `dvc.yaml`, bỏ qua stage không thay đổi |
+| `dvc repro <stage>` | Chạy 1 stage (vd `dvc repro train`) |
+| `dvc repro -f` | Ép chạy lại tất cả dù không đổi |
+| `dvc status` | Xem stage nào cần chạy lại |
+
+> Yêu cầu trước khi chạy: đã `python download_sepsis.py` (có dữ liệu) và MLflow đang chạy
+> (`docker compose up -d mlflow`). Bỏ qua bước 4 nếu chỉ train trên `.psv` gốc — `prepare_data`
+> sẽ tự bỏ qua dữ liệu vận hành.
+
+**Sau khi `dvc repro` chạy xong:** bước `compare_and_register` tự động register + promote model
+mới lên MLflow (nếu val AUROC ≥ `min_auroc` và hơn champion), đồng thời ghi đè
+`services/inference-service/artifacts/sepsis_model.json`. Nạp model mới cho service inference:
+
+```bash
+docker compose restart inference-service
+```
+
+> **So với Airflow:** DVC chạy **thủ công** trên host (chủ động `dvc repro`); Airflow chạy **tự
+> động theo lịch** trong container. Cả hai dùng chung 4 module trong gói `sepsis_mlops`.
 
 #### Kiểm thử & Demo
 
