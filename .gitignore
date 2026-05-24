@@ -10,6 +10,7 @@ mlflow_local.db
 .venv/
 __pycache__/
 *.pyc
+*.egg-info/
 node_modules/
 Data/
 .env

@@ -1,0 +1,110 @@
+schema: '2.0'
+stages:
+  prepare_data:
+    cmd: python -m sepsis_mlops.prepare_data --params params.yaml
+    deps:
+    - path: Data/sepsis-2019
+      hash: md5
+      md5: 50e4bb207408a5fd7e11016a83185f52.dir
+      size: 255057484
+      nfiles: 40336
+    - path: mlops/src/sepsis_mlops
+      hash: md5
+      md5: 81552d17b294469f1102e5871c45cede.dir
+      size: 78878
+      nfiles: 22
+    - path: params.yaml
+      hash: md5
+      md5: 670515067467589338c3277bf6319481
+      size: 634
+    outs:
+    - path: data/processed/dataset_stats.json
+      hash: md5
+      md5: 5be1bc57f9222cbef080c56b4163c315
+      size: 2410
+    - path: data/processed/test.parquet
+      hash: md5
+      md5: 6821f3c09de9c57740dc4f451f72a109
+      size: 14025267
+    - path: data/processed/train.parquet
+      hash: md5
+      md5: c224c22ffddf494be81a6c0e3b553e11
+      size: 66296079
+    - path: data/processed/val.parquet
+      hash: md5
+      md5: d72082f2834c40c0f56c8ad02cf29921
+      size: 13931751
+  train:
+    cmd: python -m sepsis_mlops.train --params params.yaml --output 
+      artifacts/model/challenger.json
+    deps:
+    - path: data/processed/train.parquet
+      hash: md5
+      md5: c224c22ffddf494be81a6c0e3b553e11
+      size: 66296079
+    - path: data/processed/val.parquet
+      hash: md5
+      md5: d72082f2834c40c0f56c8ad02cf29921
+      size: 13931751
+    - path: mlops/src/sepsis_mlops
+      hash: md5
+      md5: 81552d17b294469f1102e5871c45cede.dir
+      size: 78878
+      nfiles: 22
+    - path: params.yaml
+      hash: md5
+      md5: 670515067467589338c3277bf6319481
+      size: 634
+    outs:
+    - path: artifacts/model/challenger.json
+      hash: md5
+      md5: 65076009627701d4e2ea549f3aa762c0
+      size: 1069860
+  evaluate:
+    cmd: python -m sepsis_mlops.evaluate --params params.yaml --checkpoint 
+      artifacts/model/challenger.json --output artifacts/evaluation/metrics.json
+    deps:
+    - path: artifacts/model/challenger.json
+      hash: md5
+      md5: 65076009627701d4e2ea549f3aa762c0
+      size: 1069860
+    - path: data/processed/test.parquet
+      hash: md5
+      md5: 6821f3c09de9c57740dc4f451f72a109
+      size: 14025267
+    - path: mlops/src/sepsis_mlops
+      hash: md5
+      md5: 81552d17b294469f1102e5871c45cede.dir
+      size: 78878
+      nfiles: 22
+    - path: params.yaml
+      hash: md5
+      md5: 670515067467589338c3277bf6319481
+      size: 634
+    outs:
+    - path: artifacts/evaluation/metrics.json
+      hash: md5
+      md5: 5c3351eb85bd9dce534dcfe6a3bace55
+      size: 486
+  compare_and_register:
+    cmd: python -m sepsis_mlops.compare_and_register --params params.yaml 
+      --checkpoint artifacts/model/challenger.json --metrics 
+      artifacts/evaluation/metrics.json
+    deps:
+    - path: artifacts/evaluation/metrics.json
+      hash: md5
+      md5: 5c3351eb85bd9dce534dcfe6a3bace55
+      size: 486
+    - path: artifacts/model/challenger.json
+      hash: md5
+      md5: 65076009627701d4e2ea549f3aa762c0
+      size: 1069860
+    - path: mlops/src/sepsis_mlops
+      hash: md5
+      md5: 81552d17b294469f1102e5871c45cede.dir
+      size: 78878
+      nfiles: 22
+    - path: params.yaml
+      hash: md5
+      md5: 670515067467589338c3277bf6319481
+      size: 634
