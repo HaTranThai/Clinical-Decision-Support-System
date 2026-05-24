@@ -181,6 +181,21 @@ với 4 topic: `patient_vitals` · `patient_features` · `sepsis_prediction` · 
 | **mlflow / airflow** | Theo dõi thí nghiệm & registry / Tự động tái huấn luyện |
 | **cloudflared** | Cloudflare Tunnel — đưa frontend ra domain công khai |
 
+**Vai trò Producer / Consumer trong luồng event-driven.** Mỗi service consume từ một topic, xử lý,
+rồi publish sang topic kế tiếp. Riêng `replay-producer` là **nguồn phát (mock thiết bị monitor)** —
+nó chủ động đọc `.psv` và đẩy vào `patient_vitals`, không "lắng nghe" gì:
+
+| Thành phần | Vai trò | Hành vi |
+|---|---|---|
+| **replay-producer** | Producer (nguồn) | Đọc `.psv` → **publish** `patient_vitals` (mô phỏng thiết bị giường bệnh) |
+| **preprocess-buffer-service** | Consumer → Producer | **consume** `patient_vitals` → trích 114 đặc trưng → **publish** `patient_features` |
+| **inference-service** | Consumer → Producer | **consume** `patient_features` → XGBoost dự đoán → **publish** `sepsis_prediction` |
+| **alert-engine-service** | Consumer → Producer | **consume** `sepsis_prediction` → luật cảnh báo → **publish** `sepsis_alert` |
+| **backend** | Producer + Consumer | **publish** `patient_vitals` (khi UI/push_patient gửi); **consume** `sepsis_prediction` + `sepsis_alert` để lưu DB + đẩy WebSocket |
+
+> Trong thực tế, thiết bị monitor thật (hoặc gateway HL7/FHIR) sẽ thay `replay-producer` để đẩy
+> vitals vào `patient_vitals`; phần còn lại của luồng giữ nguyên.
+
 #### Sơ đồ triển khai (Docker Compose)
 
 ![Triển khai Docker Compose](docs/picture/2-1.png)
