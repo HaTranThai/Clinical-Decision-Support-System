@@ -380,11 +380,12 @@ docker compose exec airflow-scheduler airflow dags trigger sepsis_daily_retrain
 Theo dõi trên Airflow (http://localhost:18080) và MLflow (http://localhost:15000): xuất hiện
 phiên bản mô hình mới, các ca test đã phục vụ được gộp vào tập train.
 
-**3) Chạy bộ kiểm thử tự động (backend):**
+**3) Chạy bộ kiểm thử tự động:** chạy ở host từ thư mục `backend` (test luật cảnh báo cần truy cập code của `alert-engine-service` trong thư mục `services/`):
 
 ```bash
-docker compose exec backend pytest            # chạy trong container backend
-# hoặc local: cd backend && pip install -r requirements.txt && pytest
+cd backend
+pip install -e .      # cài backend + pytest vào môi trường
+pytest                # chạy 7 test: xác thực (JWT, hash) + luật cảnh báo
 ```
 
 **4) Các loại kiểm thử** (chi tiết xem mục [2.10](#210-thiết-kế-các-bộ-test)): unit test luật cảnh
