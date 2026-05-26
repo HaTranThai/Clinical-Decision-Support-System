@@ -498,4 +498,5 @@ cho bài toán y tế thời gian thực.
 - [`docs/mlops.md`](docs/mlops.md) — Quy trình MLOps
 - [`docs/runbook.md`](docs/runbook.md) — Sổ tay vận hành
 - [`docs/api.md`](docs/api.md) — Tài liệu REST API & WebSocket
+- [`docs/Slide-BaoCao.md`](docs/Slide-BaoCao.md) — Slide báo cáo (Marp)
 - [`docs/BaoCao-CNM.docx`](docs/) — Báo cáo đồ án đầy đủ (theo mẫu)
